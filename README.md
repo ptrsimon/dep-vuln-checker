@@ -12,3 +12,7 @@ In the background this script calls `npm audit` for nodejs repos and `local-php-
 dep-vuln-checker.py REPOLIST
 ```
 where REPOLIST is a newline-separated file which contains the directories to check.
+
+## Dependencies
+* npm >= 6
+* local-php-security-checker 
