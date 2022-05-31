@@ -86,6 +86,13 @@ def get_vulns(checker: str, repopath: str):
 
     return vulns
 
+def print_vulns(vulns):
+    for i in vulns:
+        print(','.join([
+            i["repo"],
+            i["package"],
+            i["cve"]]))
+
 def main():
     check_args(sys.argv)
     check_deps()
@@ -95,7 +102,7 @@ def main():
     for i in repos:
         allvulns += get_vulns(determine_checker(i), i)
 
-    print(json.dumps(allvulns))
+    print_vulns(allvulns)
 
 if __name__ == '__main__':
     main()
