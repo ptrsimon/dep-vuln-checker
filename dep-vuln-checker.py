@@ -7,6 +7,7 @@ import sys
 import subprocess
 import os.path
 import json
+import time
 
 def check_args(argv):
     if len(sys.argv) != 2:
@@ -89,6 +90,7 @@ def get_vulns(checker: str, repopath: str):
 def print_vulns(vulns):
     for i in vulns:
         print(','.join([
+            str(time.time()),
             i["repo"],
             i["package"],
             i["cve"]]))
