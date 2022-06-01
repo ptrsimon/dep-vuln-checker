@@ -102,7 +102,9 @@ def main():
 
     allvulns = []
     for i in repos:
-        allvulns += get_vulns(determine_checker(i), i)
+        checker = determine_checker(i)
+        if checker is not None:
+            allvulns += get_vulns(checker, i)
 
     print_vulns(allvulns)
 
