@@ -58,9 +58,9 @@ def get_vulns(checker: str, repopath: str):
 
     if checker == "composer":
         res = subprocess.run(["local-php-security-checker",
-            "--path=" + repopath,
+            "-path=" + repopath,
             "-format", "json"],
-            capture_output=True)
+            stdout=subprocess.PIPE)
         for k, v in json.loads(res.stdout).items():
             for i in v["advisories"]:
                 vulns.append({
@@ -71,8 +71,8 @@ def get_vulns(checker: str, repopath: str):
         res = subprocess.run(["npm", "audit",
             "--registry=https://registry.npmjs.org",
             "--json"],
-            cwd=repopath,
-            capture_output=True)
+            stdout=subprocess.PIPE,
+            cwd=repopath)
         for i in json.loads(res.stdout)['advisories'].values():
             for j in i["findings"]:
                 for k in j["paths"]:
