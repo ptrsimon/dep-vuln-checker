@@ -46,7 +46,7 @@ def read_repolist(path: str):
     return repolist
 
 def determine_checker(repopath: str):
-    if os.path.isfile(repopath + "/package.json"):
+    if os.path.isfile(repopath + "/package.json") and os.path.isfile(repopath + "/package-lock.json"):
         return "npm"
     elif os.path.isfile(repopath + "/composer.lock"):
         return "composer"
