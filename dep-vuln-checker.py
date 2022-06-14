@@ -8,10 +8,12 @@ import subprocess
 import os.path
 import json
 import time
+import requests
+import glob
 
 def check_args(argv):
-    if len(sys.argv) != 2:
-        print("USAGE: dep-vuln-checker.py REPOLIST")
+    if len(sys.argv) != 2 and len(sys.argv) != 3 and len(sys.argv) != 4:
+        print("USAGE: dep-vuln-checker.py REPOLIST [GH_APIKEY_FILE] [NVD_APIKEY_FILE]")
         sys.exit(1)
 
 def check_deps():
@@ -34,6 +36,15 @@ def check_deps():
     except Exception as e:
         print("npm audit not available: " + str(e))
         sys.exit(1)
+
+def check_npm_report_format():
+    res = subprocess.run(["npm", "-v"],
+            stdout=subprocess.PIPE)
+    npmver = res.stdout.decode("utf-8").split('.')[0]
+    if int(npmver) >= 7:
+        return 2
+    else:
+        return 1
         
 def read_repolist(path: str):
     repolist = []
@@ -53,7 +64,37 @@ def determine_checker(repopath: str):
     else:
         return None
 
-def get_vulns(checker: str, repopath: str):
+def get_severity_from_nvd(cve_id: str, apikey: str):
+    severity = ""
+
+    headers = {"Authorization": "Bearer " + apikey}
+
+    r = requests.get("https://services.nvd.nist.gov/rest/json/cve/1.0/" + cve_id)
+
+    try:
+        severity = json.loads(r.text)["result"]["CVE_Items"][0]["impact"]["baseMetricV2"]["severity"]
+    except Exception:
+        pass
+
+    return severity
+
+
+def get_cveid_from_ghsa(ghsa_id: str, apikey: str):
+    cveid = ""
+
+    headers = {"Authorization": "Bearer " + apikey}
+    query = {"query": "query {securityAdvisory(ghsaId:\"" + ghsa_id + "\") { identifiers {type value}}}"}
+
+    r = requests.post('https://api.github.com/graphql', json=query, headers=headers)
+
+    for i in json.loads(r.text)["data"]["securityAdvisory"]["identifiers"]:
+        if i["type"] == "CVE":
+            cveid = i["value"]
+
+    return cveid
+
+def get_vulns(checker: str, repopath: str, npm_report_format: int, 
+        gh_apikey: str, nvd_apikey: str):
     vulns = []
 
     if checker == "composer":
@@ -66,6 +107,8 @@ def get_vulns(checker: str, repopath: str):
                 vulns.append({
                     "repo": repopath,
                     "package": k,
+                    "severity": get_severity_from_nvd(i["cve"], nvd_apikey),
+                    "ghsa": "",
                     "cve": i["cve"]})
     elif checker == "npm":
         res = subprocess.run(["npm", "audit",
@@ -73,19 +116,54 @@ def get_vulns(checker: str, repopath: str):
             "--json"],
             stdout=subprocess.PIPE,
             cwd=repopath)
-        for i in json.loads(res.stdout)['advisories'].values():
-            for j in i["findings"]:
-                for k in j["paths"]:
-                    for l in i["cves"]:
-                        vulns.append({
-                            "repo": repopath,
-                            "package": k,
-                            "cve": l})
+        if npm_report_format == 1:
+            for i in json.loads(res.stdout)['advisories'].values():
+                for j in i["findings"]:
+                    for k in j["paths"]:
+                        for l in i["cves"]:
+                            vulns.append({
+                                "repo": repopath,
+                                "package": k,
+                                "severity": i["severity"],
+                                "ghsa": i["url"].rsplit('/', 1)[1],
+                                "cve": l})
+        elif npm_report_format == 2:
+            for i in json.loads(res.stdout)["vulnerabilities"].values():
+                for j in i["via"]:
+                    if "url" in j:
+                        newvuln = {
+                                "repo": repopath,
+                                "package": i["name"],
+                                "severity": j["severity"],
+                                "ghsa": j["url"].rsplit('/', 1)[1],
+                                "cve": get_cveid_from_ghsa(j["url"].rsplit('/', 1)[1],
+                                    gh_apikey),
+                                }
+                        if not newvuln in vulns:
+                            vulns.append(newvuln)
     else:
         print("Unsupported checker: " + checker)
         sys.exit(1)
 
     return vulns
+
+def read_apikey(file: str):
+    try:
+        with open(file, 'r') as fh:
+            return fh.read().rstrip('\n')
+    except Exception:
+        print("Unable to read apikey from " + file)
+        sys.exit(1)
+
+def to_ecs(vuln):
+    ecsvuln = {}
+    
+    ecsvuln["vulnerability"]["id"] = vuln["cve"] if vuln["cve"] != "" else vuln["ghsa"]
+    ecsvuln["package"]["name"] = vuln["package"]
+    ecsvuln["vulnerability"]["severity"] = vuln["severity"]
+    ecsvuln["file"]["directory"] = vuln["repo"]
+
+    return ecsvuln
 
 def print_vulns(vulns):
     for i in vulns:
@@ -93,20 +171,30 @@ def print_vulns(vulns):
             str(time.time()),
             i["repo"],
             i["package"],
+            i["severity"],
+            i["ghsa"],
             i["cve"]]))
+
+def print_vulns_json(vulns):
+    for i in vulns:
+        print(json.dumps(i))
 
 def main():
     check_args(sys.argv)
     check_deps()
     repos = read_repolist(sys.argv[1])
+    gh_apikey = read_apikey("/etc/dep-vuln-checker/gh-apikey"
+            if len(sys.argv) < 3 else sys.argv[2])
+    nvd_apikey = read_apikey("/etc/dep-vuln-checker/nvd-apikey"
+            if len(sys.argv) < 4 else sys.argv[3])
 
     allvulns = []
     for i in repos:
         checker = determine_checker(i)
         if checker is not None:
-            allvulns += get_vulns(checker, i)
+            allvulns += get_vulns(checker, i, check_npm_report_format(), gh_apikey, nvd_apikey)
 
-    print_vulns(allvulns)
+    print_vulns_json(allvulns)
 
 if __name__ == '__main__':
     main()
