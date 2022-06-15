@@ -10,6 +10,7 @@ import json
 import time
 import requests
 import glob
+import datetime
 
 def check_args(argv):
     if len(sys.argv) != 2 and len(sys.argv) != 3 and len(sys.argv) != 4:
@@ -74,7 +75,7 @@ def get_severity_from_nvd(cve_id: str, apikey: str):
     try:
         severity = json.loads(r.text)["result"]["CVE_Items"][0]["impact"]["baseMetricV2"]["severity"]
     except Exception:
-        pass
+        pass # worst case severity will be empty
 
     return severity
 
@@ -105,6 +106,7 @@ def get_vulns(checker: str, repopath: str, npm_report_format: int,
         for k, v in json.loads(res.stdout).items():
             for i in v["advisories"]:
                 vulns.append({
+                    "timestamp": datetime.datetime.now().isoformat(),
                     "repo": repopath,
                     "package": k,
                     "severity": get_severity_from_nvd(i["cve"], nvd_apikey),
@@ -122,6 +124,7 @@ def get_vulns(checker: str, repopath: str, npm_report_format: int,
                     for k in j["paths"]:
                         for l in i["cves"]:
                             vulns.append({
+                                "timestamp": datetime.datetime.now().isoformat(),
                                 "repo": repopath,
                                 "package": k,
                                 "severity": i["severity"],
@@ -132,6 +135,7 @@ def get_vulns(checker: str, repopath: str, npm_report_format: int,
                 for j in i["via"]:
                     if "url" in j:
                         newvuln = {
+                                "timestamp": datetime.datetime.now().isoformat(),
                                 "repo": repopath,
                                 "package": i["name"],
                                 "severity": j["severity"],
@@ -158,10 +162,12 @@ def read_apikey(file: str):
 def to_ecs(vuln):
     ecsvuln = {}
     
-    ecsvuln["vulnerability"]["id"] = vuln["cve"] if vuln["cve"] != "" else vuln["ghsa"]
-    ecsvuln["package"]["name"] = vuln["package"]
-    ecsvuln["vulnerability"]["severity"] = vuln["severity"]
-    ecsvuln["file"]["directory"] = vuln["repo"]
+    ecsvuln["timestamp"] = vuln["timestamp"]
+    ecsvuln["service"] = {"name": "dep-vuln-checker"}
+    ecsvuln["vulnerability"] = {"id": vuln["cve"] if vuln["cve"] != "" else vuln["ghsa"]}
+    ecsvuln["package"] = {"name": vuln["package"] }
+    ecsvuln["vulnerability"] = {"severity": vuln["severity"]}
+    ecsvuln["file"] = {"directory": vuln["repo"]}
 
     return ecsvuln
 
@@ -177,7 +183,7 @@ def print_vulns(vulns):
 
 def print_vulns_json(vulns):
     for i in vulns:
-        print(json.dumps(i))
+        print(json.dumps(to_ecs(i)))
 
 def main():
     check_args(sys.argv)
