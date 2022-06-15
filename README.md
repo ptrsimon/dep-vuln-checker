@@ -9,9 +9,11 @@ In the background this script calls `npm audit` for nodejs repos and `local-php-
 
 ## Usage
 ```
-dep-vuln-checker.py REPOLIST
+dep-vuln-checker.py REPOLIST [GH_APIKEY_FILE] [NVD_APIKEY_FILE]
 ```
 where REPOLIST is a newline-separated file which contains the directories to check.
+GH\_APIKEY\_FILE and NVD\_APIKEY\_FILE need to contain GitHub and NVD API keys.
+If the keyfile arguments are omitted, /etc/dep-vuln-checker/{gh,nvd}-apikey files ares used by default.
 
 ## Dependencies
 * npm >= 6
