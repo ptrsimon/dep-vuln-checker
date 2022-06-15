@@ -133,7 +133,7 @@ def get_vulns(checker: str, repopath: str, npm_report_format: int,
         elif npm_report_format == 2:
             for i in json.loads(res.stdout)["vulnerabilities"].values():
                 for j in i["via"]:
-                    if "url" in j:
+                    if "url" in j and type(j) is dict:
                         newvuln = {
                                 "timestamp": datetime.datetime.now().isoformat(),
                                 "repo": repopath,
