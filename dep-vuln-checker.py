@@ -99,10 +99,16 @@ def get_vulns(checker: str, repopath: str, npm_report_format: int,
     vulns = []
 
     if checker == "composer":
-        res = subprocess.run(["local-php-security-checker",
-            "-path=" + repopath,
-            "-format", "json"],
-            stdout=subprocess.PIPE)
+        try:
+            res = subprocess.run(["local-php-security-checker",
+                "-path=" + repopath,
+                "-format", "json"],
+                stdout=subprocess.PIPE)
+        except subprocess.CalledProcessError as e:
+            print("local-php-security-checker failed for " +
+                    repopath + ". retcode: " + str(e.returncode))
+            return []
+
         for k, v in json.loads(res.stdout).items():
             for i in v["advisories"]:
                 vulns.append({
@@ -117,7 +123,13 @@ def get_vulns(checker: str, repopath: str, npm_report_format: int,
             "--registry=https://registry.npmjs.org",
             "--json"],
             stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             cwd=repopath)
+        if res.stderr.decode("utf-8") != "":
+            print("npm audit failed for " + repopath + 
+                    ". stderr: \n" + res.stderr.decode("utf-8"))
+            return []
+
         if npm_report_format == 1:
             for i in json.loads(res.stdout)['advisories'].values():
                 for j in i["findings"]:
