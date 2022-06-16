@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# dep-vuln-checker.py - check dependencies for known vulnerabilities 
+# dep-vuln-checker.py - check repository dependencies for known vulnerabilities 
 #
 
 import sys
@@ -11,13 +11,44 @@ import time
 import requests
 import glob
 import datetime
+import argparse
 
-def check_args(argv):
-    if len(sys.argv) != 2 and len(sys.argv) != 3 and len(sys.argv) != 4:
-        print("USAGE: dep-vuln-checker.py REPOLIST [GH_APIKEY_FILE] [NVD_APIKEY_FILE]")
+def parse_args():
+    parser = argparse.ArgumentParser(description='Check repository dependencies for known vulnerabilities')
+
+    parser.add_argument('-g', dest="gh_apikey_file", type=str, help="GitHub apikey location", 
+            default="/etc/dep-vuln-checker/gh-apikey")
+    parser.add_argument('-n', dest="nvd_apikey_file", type=str, help="NVD apikey location",
+            default="/etc/dep-vuln-checker/nvd-apikey")
+    parser.add_argument('-a', dest="applog", type=str, help="app log location or \"stdout\"",
+            default="stdout")
+    parser.add_argument('-l', dest="vulnlog", type=str, help="Vulnerability log location or \"stdout\"",
+            default="stdout")
+    parser.add_argument('repolist_file', help="location of newline separated file which contains the repo paths to check")
+
+    return parser.parse_args()
+    
+def log_msg(msg: str, logfile: str, level: str):
+    if logfile == "stdout":
+        print(msg)
+        return
+
+    try:
+        fh = open(logfile, 'a')
+    except OSError:
+        print("Failed to open logfile: " + logfile)
         sys.exit(1)
 
-def check_deps():
+    with fh:
+        fh.write("{} {} {}".format(
+            datetime.datetime.now().isoformat(),
+            level,
+            msg))
+
+def log_vuln(vuln, logfile):
+    pass
+
+def check_deps(applog: str):
     try:
         res = subprocess.run(["local-php-security-checker", "-help"],
                 stdout=subprocess.DEVNULL,
@@ -25,7 +56,7 @@ def check_deps():
         if res.returncode != 0:
             raise Exception()
     except Exception as e:
-        print("local-php-security-checker not available: " + str(e))
+        log_msg("local-php-security-checker not available: " + str(e), applog, "ERROR")
         sys.exit(1)
 
     try:
@@ -35,7 +66,7 @@ def check_deps():
         if res.returncode != 0:
             raise Exception()
     except Exception as e:
-        print("npm audit not available: " + str(e))
+        log_msg("npm audit not available: " + str(e), applog, "ERROR")
         sys.exit(1)
 
 def check_npm_report_format():
@@ -47,13 +78,13 @@ def check_npm_report_format():
     else:
         return 1
         
-def read_repolist(path: str):
+def read_repolist(path: str, applog: str):
     repolist = []
     try:
         with open(path, 'r') as fh:
             repolist = filter(None, fh.read().split('\n'))
     except Exception as e:
-        print(e)
+        log_msg("Unable to read repolist: " +  str(e), applog, "ERROR")
         sys.exit(1)
     return repolist
 
@@ -95,7 +126,7 @@ def get_cveid_from_ghsa(ghsa_id: str, apikey: str):
     return cveid
 
 def get_vulns(checker: str, repopath: str, npm_report_format: int, 
-        gh_apikey: str, nvd_apikey: str):
+        gh_apikey: str, nvd_apikey: str, applog: str):
     vulns = []
 
     if checker == "composer":
@@ -105,8 +136,8 @@ def get_vulns(checker: str, repopath: str, npm_report_format: int,
                 "-format", "json"],
                 stdout=subprocess.PIPE)
         except subprocess.CalledProcessError as e:
-            print("local-php-security-checker failed for " +
-                    repopath + ". retcode: " + str(e.returncode))
+            log_msg("local-php-security-checker failed for " +
+                    repopath + ". retcode: " + str(e.returncode), applog, "ERROR")
             return []
 
         for k, v in json.loads(res.stdout).items():
@@ -126,8 +157,8 @@ def get_vulns(checker: str, repopath: str, npm_report_format: int,
             stderr=subprocess.PIPE,
             cwd=repopath)
         if res.stderr.decode("utf-8") != "":
-            print("npm audit failed for " + repopath + 
-                    ". stderr: \n" + res.stderr.decode("utf-8"))
+            log_msg("npm audit failed for " + repopath + 
+                    ". stderr: \n" + res.stderr.decode("utf-8"), applog, "ERROR")
             return []
 
         if npm_report_format == 1:
@@ -158,7 +189,7 @@ def get_vulns(checker: str, repopath: str, npm_report_format: int,
                         if not newvuln in vulns:
                             vulns.append(newvuln)
     else:
-        print("Unsupported checker: " + checker)
+        log_msg("Unsupported checker: " + checker, applog, "ERROR")
         sys.exit(1)
 
     return vulns
@@ -168,7 +199,7 @@ def read_apikey(file: str):
         with open(file, 'r') as fh:
             return fh.read().rstrip('\n')
     except Exception:
-        print("Unable to read apikey from " + file)
+        log_msg("Unable to read apikey from " + file, applog, "ERROR")
         sys.exit(1)
 
 def to_ecs(vuln):
@@ -193,26 +224,34 @@ def print_vulns(vulns):
             i["ghsa"],
             i["cve"]]))
 
-def print_vulns_json(vulns):
-    for i in vulns:
-        print(json.dumps(to_ecs(i)))
+def write_vulns_json(vulns, applog:str, vulnlog: str):
+    if vulnlog != "stdout":
+        try:
+            fh = open(vulnlog, "a")
+        except OSError:
+            log_msg("Failed to open " + vulnlog, applog)
+            sys.exit(1)
+
+    if vulnlog != "stdout":
+        with fh:
+            for i in vulns:
+                fh.write(json.dumps(to_ecs(i)) + "\n")
+    else:
+        for i in vulns:
+            print(json.dumps(to_ecs(i)))
 
 def main():
-    check_args(sys.argv)
-    check_deps()
-    repos = read_repolist(sys.argv[1])
-    gh_apikey = read_apikey("/etc/dep-vuln-checker/gh-apikey"
-            if len(sys.argv) < 3 else sys.argv[2])
-    nvd_apikey = read_apikey("/etc/dep-vuln-checker/nvd-apikey"
-            if len(sys.argv) < 4 else sys.argv[3])
+    args = parse_args()
+    check_deps(args.applog)
 
     allvulns = []
-    for i in repos:
+    for i in read_repolist(args.repolist_file, args.applog):
         checker = determine_checker(i)
         if checker is not None:
-            allvulns += get_vulns(checker, i, check_npm_report_format(), gh_apikey, nvd_apikey)
+            allvulns += get_vulns(checker, i, check_npm_report_format(), 
+                    read_apikey(args.gh_apikey_file), read_apikey(args.nvd_apikey_file), args.applog)
 
-    print_vulns_json(allvulns)
+    write_vulns_json(allvulns, args.applog, args.vulnlog)
 
 if __name__ == '__main__':
     main()
