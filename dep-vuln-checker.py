@@ -111,19 +111,20 @@ def get_severity_from_nvd(cve_id: str, apikey: str):
     return severity
 
 
-def get_cveid_from_ghsa(ghsa_id: str, apikey: str):
+def get_details_from_ghsa(ghsa_id: str, apikey: str):
     cveid = ""
 
     headers = {"Authorization": "Bearer " + apikey}
-    query = {"query": "query {securityAdvisory(ghsaId:\"" + ghsa_id + "\") { identifiers {type value}}}"}
+    query = {"query": "query {securityAdvisory(ghsaId:\"" + ghsa_id + "\") { summary identifiers {type value}}}"}
 
     r = requests.post('https://api.github.com/graphql', json=query, headers=headers)
 
-    for i in json.loads(r.text)["data"]["securityAdvisory"]["identifiers"]:
+    rdict = json.loads(r.text)
+    for i in rdict["data"]["securityAdvisory"]["identifiers"]:
         if i["type"] == "CVE":
             cveid = i["value"]
 
-    return cveid
+    return cveid, rdict["data"]["securityAdvisory"]["summary"]
 
 def get_vulns(checker: str, repopath: str, npm_report_format: int, 
         gh_apikey: str, nvd_apikey: str, applog: str):
@@ -148,7 +149,8 @@ def get_vulns(checker: str, repopath: str, npm_report_format: int,
                     "package": k,
                     "severity": get_severity_from_nvd(i["cve"], nvd_apikey),
                     "ghsa": "",
-                    "cve": i["cve"]})
+                    "cve": i["cve"],
+                    "description": i["title"]})
     elif checker == "npm":
         res = subprocess.run(["npm", "audit",
             "--registry=https://registry.npmjs.org",
@@ -177,14 +179,15 @@ def get_vulns(checker: str, repopath: str, npm_report_format: int,
             for i in json.loads(res.stdout)["vulnerabilities"].values():
                 for j in i["via"]:
                     if "url" in j and type(j) is dict:
+                        cveid, description = get_details_from_ghsa(j["url"].rsplit('/', 1)[1], gh_apikey)
                         newvuln = {
                                 "timestamp": datetime.datetime.now().isoformat(),
                                 "repo": repopath,
                                 "package": i["name"],
                                 "severity": j["severity"],
                                 "ghsa": j["url"].rsplit('/', 1)[1],
-                                "cve": get_cveid_from_ghsa(j["url"].rsplit('/', 1)[1],
-                                    gh_apikey),
+                                "cve": cveid,
+                                "description": description
                                 }
                         if not newvuln in vulns:
                             vulns.append(newvuln)
@@ -207,9 +210,12 @@ def to_ecs(vuln):
     
     ecsvuln["timestamp"] = vuln["timestamp"]
     ecsvuln["service"] = {"name": "dep-vuln-checker"}
-    ecsvuln["vulnerability"] = {"id": vuln["cve"] if vuln["cve"] != "" else vuln["ghsa"]}
+    ecsvuln["vulnerability"] = {
+        "id": vuln["cve"] if vuln["cve"] != "" else vuln["ghsa"],
+        "severity": vuln["severity"],
+        "description": vuln["description"]
+        }
     ecsvuln["package"] = {"name": vuln["package"] }
-    ecsvuln["vulnerability"]["severity"] = vuln["severity"]
     ecsvuln["file"] = {"directory": vuln["repo"]}
 
     return ecsvuln
