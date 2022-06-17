@@ -209,7 +209,7 @@ def to_ecs(vuln):
     ecsvuln["service"] = {"name": "dep-vuln-checker"}
     ecsvuln["vulnerability"] = {"id": vuln["cve"] if vuln["cve"] != "" else vuln["ghsa"]}
     ecsvuln["package"] = {"name": vuln["package"] }
-    ecsvuln["vulnerability"] = {"severity": vuln["severity"]}
+    ecsvuln["vulnerability"]["severity"] = vuln["severity"]
     ecsvuln["file"] = {"directory": vuln["repo"]}
 
     return ecsvuln
