@@ -11,10 +11,11 @@ In the background this script calls `npm audit` for nodejs repos and `local-php-
 ```
 dep-vuln-checker.py [-h] [-g GH_APIKEY_FILE] [-n NVD_APIKEY_FILE] [-a APPLOG] [-l VULNLOG] repolist_file
 ```
-where repolist\_file is a newline-separated file which contains the directories to check.
-GH\_APIKEY\_FILE and NVD\_APIKEY\_FILE need to contain GitHub and NVD API keys.
-If the keyfile arguments are omitted, /etc/dep-vuln-checker/{gh,nvd}-apikey files ares used by default.
-APPLOG is the log path for app messages and VULNLOG for the vulnerabilities ("stdout" can be used for both of them, which is the default).
+* repolist\_file: path to a newline-separated file containing the directories to check
+* GH\_APIKEY\_FILE: path to file containing GitHub API key (default: /etc/dep-vuln-checker/gh-apikey)
+* NVD\_APIKEY\_FILE: path to file containing NVD API key (default: /etc/dep-vuln-checker/nvd-apikey)
+* APPLOG: log path for app messages  (default: stdout)
+* VULNLOG log path for vulnerabilities (default: stdout)
 
 ## Dependencies
 * npm >= 6
