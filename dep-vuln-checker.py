@@ -108,7 +108,7 @@ def store_vuln(vuln, invpath: str, applog: str, silent: bool):
 
 def in_inventory(vuln, invpath: str, applog: str, silent: bool):
     if invpath == "none":
-        return True
+        return False
 
     vulnid = (vuln["cve"] if vuln["cve"] != "" else vuln["ghsa"])
 
