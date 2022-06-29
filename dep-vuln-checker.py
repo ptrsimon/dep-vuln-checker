@@ -184,6 +184,8 @@ def determine_checkers(repopath: str):
         checkers.append("composer")
     if os.path.isfile(repopath + "/yarn.lock"):
         checkers.append("yarn")
+    if os.path.isdir(repopath + "/gradle"):
+        checkers.append("gradle")
 
     return checkers
 
@@ -329,6 +331,72 @@ def get_vulns_npm(repopath: str, gh_apikey: str, invpath: str, npm_report_format
 
     return vulns
 
+def get_vulns_gradle(repopath: str, nvd_apikey: str, invpath: str, applog: str, silent: bool):
+    vulns = []
+
+    gradle_init="""
+allprojects {
+    buildscript {
+        repositories {
+            maven {
+                url "https://plugins.gradle.org/m2/"
+            }
+        }
+        dependencies {
+            classpath "org.owasp:dependency-check-gradle:7.1.1"
+        }
+    }
+
+
+    afterEvaluate { project ->
+        project.apply plugin: 'org.owasp.dependencycheck'
+            dependencyCheck {
+                format="json"
+            }
+    }
+}
+"""
+
+    try:
+        with open(repopath + "/depcheck-init.gradle", 'w') as fh:
+            fh.write(gradle_init)
+    except Exception as e:
+        log_msg("Unable to create " + repopath + "/depcheck-init.gradle: " + str(e),
+                applog, "ERROR", silent)
+        return []
+
+    try:
+        res = subprocess.run(["gradle", "--init-script", "depcheck-init.gradle", "dependencyCheckAnalyze"],
+                             cwd=repopath,
+                             stderr=subprocess.PIPE,
+                             stdout=subprocess.PIPE)
+    except Exception as e:
+        log_msg("Failed to run gradle dependency check on " + repopath + ": " + str(e), 
+                applog, "ERROR", silent)
+        return []
+
+    for i in glob.glob(repopath + "/**/build/reports/dependency-check-report.json"):
+        with open(i, 'r') as fh:
+            report = json.load(fh)
+            for j in report["dependencies"]:
+                if "vulnerabilities" in j.keys():
+                    for k in j["vulnerabilities"]:
+                        newvuln = {
+                            "timestamp": datetime.datetime.now().isoformat(),
+                            "repo": repopath,
+                            "package": j["packages"][0]["id"].split(':')[1],
+                            "severity": get_severity_from_nvd(k["name"], nvd_apikey),
+                            "cve": k["name"],
+                            "description": k["description"]
+                        }
+
+                        if not newvuln in vulns and not in_inventory(newvuln, invpath, applog, silent):
+                            vulns.append(newvuln)
+                            store_vuln(newvuln, invpath, applog, silent)
+
+    return vulns
+
+
 def get_vulns(checker: str, repopath: str, npm_report_format: int,
               gh_apikey: str, nvd_apikey: str, invpath: str, applog: str, silent: bool):
     vulns = []
@@ -339,6 +407,8 @@ def get_vulns(checker: str, repopath: str, npm_report_format: int,
         vulns += get_vulns_yarn(repopath, nvd_apikey, invpath, applog, silent)
     elif checker == "npm":
         vulns += get_vulns_npm(repopath, gh_apikey, invpath, npm_report_format, applog, silent)
+    elif checker == "gradle":
+        vulns += get_vulns_gradle(repopath, nvd_apikey, invpath, applog, silent)
     else:
         log_msg("Unsupported checker: " + checker, applog, "ERROR", silent)
         sys.exit(1)
