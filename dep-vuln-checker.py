@@ -44,7 +44,6 @@ def parse_args():
 def log_msg(msg: str, logfile: str, level: str, silent: bool):
     if not silent:
         print(msg)
-        return
 
     try:
         fh = open(logfile, 'a')
@@ -133,7 +132,6 @@ def in_inventory(vuln, invpath: str, applog: str, silent: bool):
     else:
         return True
 
-
 def check_deps(applog: str, silent: bool):
     try:
         res = subprocess.run(["local-php-security-checker", "-help"],
@@ -177,13 +175,17 @@ def read_repolist(path: str, applog: str, silent: bool):
     return repolist
 
 
-def determine_checker(repopath: str):
+def determine_checkers(repopath: str):
+    checkers = []
+
     if os.path.isfile(repopath + "/package.json") and os.path.isfile(repopath + "/package-lock.json"):
-        return "npm"
-    elif os.path.isfile(repopath + "/composer.lock"):
-        return "composer"
-    else:
-        return None
+        checkers.append("npm")
+    if os.path.isfile(repopath + "/composer.lock"):
+        checkers.append("composer")
+    if os.path.isfile(repopath + "/yarn.lock"):
+        checkers.append("yarn")
+
+    return checkers
 
 
 def get_severity_from_nvd(cve_id: str, apikey: str):
@@ -217,78 +219,126 @@ def get_details_from_ghsa(ghsa_id: str, apikey: str):
     return cveid, rdict["data"]["securityAdvisory"]["summary"]
 
 
+def get_vulns_composer(repopath: str, nvd_apikey: str, invpath: str, applog: str, silent: bool):
+    vulns = []
+
+    try:
+        res = subprocess.run(["local-php-security-checker",
+                              "-path=" + repopath,
+                              "-format", "json"],
+                             stdout=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        log_msg("local-php-security-checker failed for " +
+                repopath + ". retcode: " + str(e.returncode), applog, "ERROR", silent)
+        return []
+    
+    for k, v in json.loads(res.stdout).items():
+        for i in v["advisories"]:
+            newvuln = {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "repo": repopath,
+                "package": k,
+                "severity": get_severity_from_nvd(i["cve"], nvd_apikey),
+                "ghsa": "",
+                "cve": i["cve"],
+                "description": i["title"]}
+            if not in_inventory(newvuln, invpath, applog, silent):
+                vulns.append(newvuln)
+                store_vuln(newvuln, invpath, applog, silent)
+
+    return vulns
+
+
+def get_vulns_yarn(repopath: str, nvd_apikey: str, invpath: str, applog: str, silent: bool):
+    vulns = []
+
+    try:
+        res = subprocess.run(["yarn", "audit", "--json"],
+                             cwd=repopath,
+                             stdout=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        log_msg("yarn audit failed for " +
+                repopath + ". retcode: " + str(e.returncode), applog, "ERROR", silent)
+        return []
+
+    for i in res.stdout.splitlines():
+        vulndata = json.loads(i)
+        if vulndata["type"] == "auditAdvisory":
+            for j in vulndata["data"]["advisory"]["cves"]:
+                newvuln = {
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "repo": repopath,
+                    "package": vulndata["data"]["advisory"]["module_name"],
+                    "severity": vulndata["data"]["advisory"]["severity"],
+                    "ghsa": "",
+                    "cve": j,
+                    "description": vulndata["data"]["advisory"]["overview"]}
+                if not in_inventory(newvuln, invpath, applog, silent):
+                    vulns.append(newvuln)
+                    store_vuln(newvuln, invpath, applog, silent)
+
+    return vulns
+
+
+def get_vulns_npm(repopath: str, gh_apikey: str, invpath: str, npm_report_format: int,
+        applog: str, silent: bool):
+    vulns = []
+
+    res = subprocess.run(["npm", "audit",
+                          "--registry=https://registry.npmjs.org",
+                          "--json"],
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE,
+                         cwd=repopath)
+
+    if res.stderr.decode("utf-8") != "":
+        log_msg("npm audit failed for " + repopath +
+                ". stderr: \n" + res.stderr.decode("utf-8"), applog, "ERROR", silent)
+        return []
+
+    if npm_report_format == 1:
+        for i in json.loads(res.stdout)['advisories'].values():
+            for j in i["findings"]:
+                for k in j["paths"]:
+                    for l in i["cves"]:
+                        vulns.append({
+                            "timestamp": datetime.datetime.now().isoformat(),
+                            "repo": repopath,
+                            "package": k,
+                            "severity": i["severity"],
+                            "ghsa": i["url"].rsplit('/', 1)[1],
+                            "cve": l})
+
+    elif npm_report_format == 2:
+        for i in json.loads(res.stdout)["vulnerabilities"].values():
+            for j in i["via"]:
+                if "url" in j and type(j) is dict:
+                    cveid, description = get_details_from_ghsa(j["url"].rsplit('/', 1)[1], gh_apikey)
+                    newvuln = {
+                        "timestamp": datetime.datetime.now().isoformat(),
+                        "repo": repopath,
+                        "package": i["name"],
+                        "severity": j["severity"],
+                        "ghsa": j["url"].rsplit('/', 1)[1],
+                        "cve": cveid,
+                        "description": description
+                    }
+                    if not newvuln in vulns and not in_inventory(newvuln, invpath, applog, silent):
+                        vulns.append(newvuln)
+                        store_vuln(newvuln, invpath, applog, silent)
+
+    return vulns
+
 def get_vulns(checker: str, repopath: str, npm_report_format: int,
               gh_apikey: str, nvd_apikey: str, invpath: str, applog: str, silent: bool):
     vulns = []
 
     if checker == "composer":
-        try:
-            res = subprocess.run(["local-php-security-checker",
-                                  "-path=" + repopath,
-                                  "-format", "json"],
-                                 stdout=subprocess.PIPE)
-        except subprocess.CalledProcessError as e:
-            log_msg("local-php-security-checker failed for " +
-                    repopath + ". retcode: " + str(e.returncode), applog, "ERROR", silent)
-            return []
-
-        for k, v in json.loads(res.stdout).items():
-            for i in v["advisories"]:
-                newvuln = {
-                    "timestamp": datetime.datetime.now().isoformat(),
-                    "repo": repopath,
-                    "package": k,
-                    "severity": get_severity_from_nvd(i["cve"], nvd_apikey),
-                    "ghsa": "",
-                    "cve": i["cve"],
-                    "description": i["title"]}
-                if not in_inventory(newvuln, invpath, applog, silent):
-                    vulns.append(newvuln)
-                    store_vuln(newvuln, invpath, applog, silent)
-
+        vulns += get_vulns_composer(repopath, nvd_apikey, invpath, applog, silent)
+    elif checker == "yarn":
+        vulns += get_vulns_yarn(repopath, nvd_apikey, invpath, applog, silent)
     elif checker == "npm":
-        res = subprocess.run(["npm", "audit",
-                              "--registry=https://registry.npmjs.org",
-                              "--json"],
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE,
-                             cwd=repopath)
-
-        if res.stderr.decode("utf-8") != "":
-            log_msg("npm audit failed for " + repopath +
-                    ". stderr: \n" + res.stderr.decode("utf-8"), applog, "ERROR", silent)
-            return []
-
-        if npm_report_format == 1:
-            for i in json.loads(res.stdout)['advisories'].values():
-                for j in i["findings"]:
-                    for k in j["paths"]:
-                        for l in i["cves"]:
-                            vulns.append({
-                                "timestamp": datetime.datetime.now().isoformat(),
-                                "repo": repopath,
-                                "package": k,
-                                "severity": i["severity"],
-                                "ghsa": i["url"].rsplit('/', 1)[1],
-                                "cve": l})
-
-        elif npm_report_format == 2:
-            for i in json.loads(res.stdout)["vulnerabilities"].values():
-                for j in i["via"]:
-                    if "url" in j and type(j) is dict:
-                        cveid, description = get_details_from_ghsa(j["url"].rsplit('/', 1)[1], gh_apikey)
-                        newvuln = {
-                            "timestamp": datetime.datetime.now().isoformat(),
-                            "repo": repopath,
-                            "package": i["name"],
-                            "severity": j["severity"],
-                            "ghsa": j["url"].rsplit('/', 1)[1],
-                            "cve": cveid,
-                            "description": description
-                        }
-                        if not newvuln in vulns and not in_inventory(newvuln, invpath, applog, silent):
-                            vulns.append(newvuln)
-                            store_vuln(newvuln, invpath, applog, silent)
+        vulns += get_vulns_npm(repopath, gh_apikey, invpath, npm_report_format, applog, silent)
     else:
         log_msg("Unsupported checker: " + checker, applog, "ERROR", silent)
         sys.exit(1)
@@ -337,7 +387,7 @@ def write_vulns_json(vulns, applog: str, vulnlog: str, silent: bool):
         try:
             fh = open(vulnlog, "a")
         except OSError:
-            log_msg("Failed to open " + vulnlog, applog, silent)
+            log_msg("Failed to open " + vulnlog, "ERROR", applog, silent)
             sys.exit(1)
 
     if vulnlog != "stdout":
@@ -351,6 +401,7 @@ def write_vulns_json(vulns, applog: str, vulnlog: str, silent: bool):
 
 def main():
     args = parse_args()
+    log_msg("Started", "INFO", args.applog, args.s)
     check_deps(args.applog, args.s)
 
     if args.invpath != "none":
@@ -358,14 +409,19 @@ def main():
 
     allvulns = []
     for i in read_repolist(args.repolist_file, args.applog, args.s):
-        checker = determine_checker(i)
-        if checker is not None:
-            allvulns += get_vulns(checker, i, check_npm_report_format(),
-                                  read_apikey(args.gh_apikey_file, args.applog, args.s),
-                                  read_apikey(args.nvd_apikey_file, args.applog, args.s),
-                                  args.invpath, args.applog, args.s)
+        checkers = determine_checkers(i)
+        if len(checkers) > 0:
+            for j in checkers:
+                log_msg("Getting vulnerabilities for repo=" + i + ",checker=" + j, "INFO", args.applog, args.s)
+                newvulns = get_vulns(j, i, check_npm_report_format(),
+                                      read_apikey(args.gh_apikey_file, args.applog, args.s),
+                                      read_apikey(args.nvd_apikey_file, args.applog, args.s),
+                                      args.invpath, args.applog, args.s)
+                allvulns += newvulns
+                log_msg(str(len(newvulns)) + " new vulnerabilities found for repo=" + i + ",checker=" + j, "INFO", args.applog, args.s)
 
     write_vulns_json(allvulns, args.applog, args.vulnlog, args.s)
+    log_msg("Done", "INFO", args.applog, args.s)
 
 
 if __name__ == '__main__':
