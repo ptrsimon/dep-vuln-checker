@@ -4,8 +4,12 @@ Check a repo for known vulnerabilities in its dependencies.
 Supported package managers:
 * npm
 * Composer
+* Gradle
 
-In the background this script calls `npm audit` for nodejs repos and `local-php-security-checker` (https://github.com/fabpot/local-php-security-checker) for PHP repos.
+In the background this script calls: 
+* `npm audit` for nodejs repos
+* `local-php-security-checker` (https://github.com/fabpot/local-php-security-checker) for PHP repos
+* `org.owasp:dependency-check-gradle` for Gradle repos
 
 ## Usage
 ```
