@@ -35,8 +35,8 @@ def parse_args():
                         default="/var/lib/dep-vuln-checker/inventory.db")
     parser.add_argument("-s", action="store_true",
                         help="silent mode - no output")
-    parser.add_argument('repolist_file',
-                        help="location of newline separated file which contains the repo paths to check")
+    parser.add_argument('repolist',
+                        help="location of newline separated file which contains the repo paths to check OR a single path if only one repo needs to be checked")
 
     return parser.parse_args()
 
@@ -478,17 +478,33 @@ def main():
         create_inventory(args.invpath, args.applog, args.s)
 
     allvulns = []
-    for i in read_repolist(args.repolist_file, args.applog, args.s):
-        checkers = determine_checkers(i)
+    # check a single repo
+    if os.path.isdir(args.repolist):
+        repo = args.repolist
+        checkers = determine_checkers(repo)
         if len(checkers) > 0:
             for j in checkers:
-                log_msg("Getting vulnerabilities for repo=" + i + ",checker=" + j, "INFO", args.applog, args.s)
-                newvulns = get_vulns(j, i, check_npm_report_format(),
-                                      read_apikey(args.gh_apikey_file, args.applog, args.s),
-                                      read_apikey(args.nvd_apikey_file, args.applog, args.s),
-                                      args.invpath, args.applog, args.s)
-                allvulns += newvulns
-                log_msg(str(len(newvulns)) + " new vulnerabilities found for repo=" + i + ",checker=" + j, "INFO", args.applog, args.s)
+                log_msg("Getting vulnerabilities for repo=" + repo + ",checker=" + j, "INFO", args.applog, args.s)
+                allvulns = get_vulns(j, repo, check_npm_report_format(),
+                                          read_apikey(args.gh_apikey_file, args.applog, args.s),
+                                          read_apikey(args.nvd_apikey_file, args.applog, args.s),
+                                          args.invpath, args.applog, args.s)
+                log_msg(str(len(allvulns)) + " new vulnerabilities found for repo=" + repo + ",checker=" + j, "INFO", args.applog, args.s)
+    # check a list of repos
+    elif os.path.isfile(args.repolist):
+        for i in read_repolist(args.repolist, args.applog, args.s):
+            checkers = determine_checkers(i)
+            if len(checkers) > 0:
+                for j in checkers:
+                    log_msg("Getting vulnerabilities for repo=" + i + ",checker=" + j, "INFO", args.applog, args.s)
+                    newvulns = get_vulns(j, i, check_npm_report_format(),
+                                          read_apikey(args.gh_apikey_file, args.applog, args.s),
+                                          read_apikey(args.nvd_apikey_file, args.applog, args.s),
+                                          args.invpath, args.applog, args.s)
+                    allvulns += newvulns
+                    log_msg(str(len(newvulns)) + " new vulnerabilities found for repo=" + i + ",checker=" + j, "INFO", args.applog, args.s)
+    else:
+        log_msg("repolist argument is not a dir or file, exit", "ERROR", args.applog, args.s)
 
     write_vulns_json(allvulns, args.applog, args.vulnlog, args.s)
     log_msg("Done", "INFO", args.applog, args.s)
