@@ -13,6 +13,8 @@ In the background this script calls:
 
 The output is a json file with info about the vulnerable packages.
 
+Note: there's no guarantee that the script or tools called by this script will not modify the target repo (eg. gradle init file needs to be created/modified for gradle dependency check). Recommended to operate on copies of repos.
+
 ## Usage
 ```
 dep-vuln-checker.py [-h] [-g GH_APIKEY_FILE] [-n NVD_APIKEY_FILE] [-a APPLOG] [-l VULNLOG] [-i INVDB] repolist_file
