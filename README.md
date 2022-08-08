@@ -17,7 +17,7 @@ Note: there's no guarantee that the script or tools called by this script will n
 
 ## Usage
 ```
-dep-vuln-checker.py [-h] [-g GH_APIKEY_FILE] [-n NVD_APIKEY_FILE] [-a APPLOG] [-l VULNLOG] [-i INVDB] repolist_file
+dep-vuln-checker.py [-h] [-g GH_APIKEY_FILE] [-n NVD_APIKEY_FILE] [-a APPLOG] [-l VULNLOG] [-i INVDB] [-c CACHETYPE] [-rh REDISHOST] [-rp REDISPORT] repolist_file
 ```
 * repolist\_file: path to a newline-separated file containing the directories to check OR a single directory to check
 * GH\_APIKEY\_FILE: path to file containing GitHub API key (default: /etc/dep-vuln-checker/gh-apikey)
@@ -25,6 +25,8 @@ dep-vuln-checker.py [-h] [-g GH_APIKEY_FILE] [-n NVD_APIKEY_FILE] [-a APPLOG] [-
 * APPLOG: log path for app messages  (default: stdout)
 * VULNLOG: log path for vulnerabilities (default: stdout)
 * INVDB: store vulnerability information in a file so they won't be logged on the next run. Set to 'none' if you don't want to use an inventory and want to always log all vulnerable dependencies. (default: /var/lib/dep-vuln-checker/inventory.db)
+* CACHETYPE: storage to cache HTTP requests in. Allowed values: redis (default: no cache)
+* REDISHOST, REDISPORT: connection details for redis request cache (default: 127.0.0.1:6379)
 
 ## Dependencies
 * npm >= 6
