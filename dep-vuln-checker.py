@@ -9,11 +9,12 @@ import os.path
 import json
 import time
 import requests
+import requests_cache
+import redis
 import glob
 import datetime
 import argparse
 import sqlite3
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Check repository dependencies for known vulnerabilities')
@@ -33,6 +34,15 @@ def parse_args():
     parser.add_argument('-i', dest="invpath", type=str,
                         help="Inventory database location or \"none\" (default: /var/lib/dep-vuln-checker/inventory.db)",
                         default="/var/lib/dep-vuln-checker/inventory.db")
+    parser.add_argument('-c', dest="cachetype", type=str,
+                        help="cache type. Allowed values: redis (no cache used if omitted)",
+                        default=None)
+    parser.add_argument('-rh', dest="redishost", type=str,
+                        help="redis host for cache (default: 127.0.0.1)",
+                        default="127.0.0.1")
+    parser.add_argument('-rp', dest="redisport", type=int,
+                        help="redis port for cache (default: 6379)",
+                        default=6379)
     parser.add_argument("-s", action="store_true",
                         help="silent mode - no output")
     parser.add_argument('repolist',
@@ -468,6 +478,9 @@ def write_vulns_json(vulns, applog: str, vulnlog: str, silent: bool):
         for i in vulns:
             print(json.dumps(to_ecs(i)))
 
+def patch_req_cache(redis_host, redis_port):
+    redisbackend = requests_cache.backends.RedisCache(host=redis_host, port=redis_port)
+    requests_cache.install_cache('globalcache', backend=redisbackend, expire_after=datetime.timedelta(days=7))
 
 def main():
     args = parse_args()
@@ -476,6 +489,9 @@ def main():
 
     if args.invpath != "none":
         create_inventory(args.invpath, args.applog, args.s)
+
+    if args.cachetype == "redis":
+        patch_req_cache(args.redishost, args.redisport)
 
     allvulns = []
     # check a single repo
