@@ -200,7 +200,7 @@ def determine_checkers(repopath: str):
     return checkers
 
 
-def get_severity_from_nvd(cve_id: str, apikey: str):
+def get_severity_from_nvd(cve_id: str, apikey: str, applog: str, silent: bool):
     severity = ""
 
     headers = {"Authorization": "Bearer " + apikey}
@@ -210,6 +210,7 @@ def get_severity_from_nvd(cve_id: str, apikey: str):
     try:
         severity = json.loads(r.text)["result"]["CVE_Items"][0]["impact"]["baseMetricV2"]["severity"]
     except Exception:
+        log_msg("Failed to get severity for " + cve_id, applog, "WARNING", silent)
         pass  # worst case severity will be empty
 
     return severity
@@ -281,7 +282,7 @@ def get_vulns_yarn(repopath: str, nvd_apikey: str, invpath: str, applog: str, si
                     "timestamp": datetime.datetime.now().isoformat(),
                     "repo": repopath,
                     "package": vulndata["data"]["advisory"]["module_name"],
-                    "severity": vulndata["data"]["advisory"]["severity"],
+                    "severity": get_severity_from_nvd(j, nvd_apikey),
                     "ghsa": "",
                     "cve": j,
                     "description": vulndata["data"]["advisory"]["overview"]}
@@ -292,7 +293,7 @@ def get_vulns_yarn(repopath: str, nvd_apikey: str, invpath: str, applog: str, si
     return vulns
 
 
-def get_vulns_npm(repopath: str, gh_apikey: str, invpath: str, npm_report_format: int,
+def get_vulns_npm(repopath: str, gh_apikey: str, nvd_apikey: str, invpath: str, npm_report_format: int,
         applog: str, silent: bool):
     vulns = []
 
@@ -317,7 +318,7 @@ def get_vulns_npm(repopath: str, gh_apikey: str, invpath: str, npm_report_format
                             "timestamp": datetime.datetime.now().isoformat(),
                             "repo": repopath,
                             "package": k,
-                            "severity": i["severity"],
+                            "severity": get_severity_from_nvd(l, nvd_apikey),
                             "ghsa": i["url"].rsplit('/', 1)[1],
                             "cve": l})
 
@@ -330,7 +331,7 @@ def get_vulns_npm(repopath: str, gh_apikey: str, invpath: str, npm_report_format
                         "timestamp": datetime.datetime.now().isoformat(),
                         "repo": repopath,
                         "package": i["name"],
-                        "severity": j["severity"],
+                        "severity": get_severity_from_nvd(cveid, nvd_apikey),
                         "ghsa": j["url"].rsplit('/', 1)[1],
                         "cve": cveid,
                         "description": description
@@ -416,7 +417,7 @@ def get_vulns(checker: str, repopath: str, npm_report_format: int,
     elif checker == "yarn":
         vulns += get_vulns_yarn(repopath, nvd_apikey, invpath, applog, silent)
     elif checker == "npm":
-        vulns += get_vulns_npm(repopath, gh_apikey, invpath, npm_report_format, applog, silent)
+        vulns += get_vulns_npm(repopath, gh_apikey, nvd_apikey, invpath, npm_report_format, applog, silent)
     elif checker == "gradle":
         vulns += get_vulns_gradle(repopath, nvd_apikey, invpath, applog, silent)
     else:
