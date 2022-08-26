@@ -11,11 +11,12 @@ import time
 import requests
 import requests_cache
 from ratelimit import limits, sleep_and_retry
-import redis
 import glob
 import datetime
 import argparse
 import sqlite3
+import LogHandler
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Check repository dependencies for known vulnerabilities')
@@ -52,77 +53,57 @@ def parse_args():
     return parser.parse_args()
 
 
-def log_msg(msg: str, logfile: str, level: str, silent: bool):
-    if not silent:
-        print(msg)
-
-    try:
-        fh = open(logfile, 'a')
-    except OSError:
-        print("Failed to open logfile: " + logfile)
-        sys.exit(1)
-
-    with fh:
-        fh.write("{} {} {}".format(
-            datetime.datetime.now().isoformat(),
-            level,
-            msg))
-
-
-def inv_connect(path: str, applog: str, silent: bool):
+def inv_connect(path: str, lh: LogHandler):
     try:
         conn = sqlite3.connect(path)
     except Exception as e:
-        log_msg("Failed to create SQLite database at " + path + ": " + str(e),
-                applog, "ERROR", silent)
+        lh.log_msg("Failed to create SQLite database at " + path + ": " + str(e), "ERROR")
         sys.exit(1)
 
     return conn
 
 
-def create_inventory(path: str, applog: str, silent: bool):
-    conn = inv_connect(path, applog, silent)
+def create_inventory(path: str, lh: LogHandler):
+    conn = inv_connect(path, lh)
     cur = conn.cursor()
     try:
         cur.execute('''CREATE TABLE IF NOT EXISTS vulnerabilities
                     (directory TEXT, package_name TEXT, vulnerability_id TEXT)''')
         conn.commit()
     except Exception as e:
-        log_msg("Failed to create table in inventory at {}: {}"
-                .format(path, str(e)), applog, "ERROR", silent)
+        lh.log_msg("Failed to create table in inventory at {}: {}".format(path, str(e)), "ERROR")
         sys.exit(1)
     finally:
         conn.close()
 
 
-def store_vuln(vuln, invpath: str, applog: str, silent: bool):
+def store_vuln(vuln, invpath: str, lh: LogHandler):
     if invpath == "none":
         return
 
     vulnid = (vuln["cve"] if vuln["cve"] != "" else vuln["ghsa"])
 
-    conn = inv_connect(invpath, applog, silent)
+    conn = inv_connect(invpath, lh)
     cur = conn.cursor()
     try:
         cur.execute('''INSERT INTO vulnerabilities(directory, package_name, vulnerability_id)
                     VALUES(?,?,?)''', (vuln["repo"], vuln["package"], vulnid))
         conn.commit()
     except Exception as e:
-        log_msg("Failed to insert vulnerability {};{};{} into inventory at {}: {}"
-                .format(vuln["repo"], vuln["package"], vulnid, invpath, str(e)),
-                applog, "ERROR", silent)
+        lh.log_msg("Failed to insert vulnerability {};{};{} into inventory at {}: {}"
+                   .format(vuln["repo"], vuln["package"], vulnid, invpath, str(e)), "ERROR")
         sys.exit(1)
     finally:
         conn.close()
 
 
-def in_inventory(vuln, invpath: str, applog: str, silent: bool):
+def in_inventory(vuln, invpath: str, lh: LogHandler):
     if invpath == "none":
         return False
 
     vulnid = (vuln["cve"] if vuln["cve"] != "" else vuln["ghsa"])
 
-    conn = inv_connect(invpath, applog, silent)
+    conn = inv_connect(invpath, lh)
     cur = conn.cursor()
     res = []
     try:
@@ -131,9 +112,8 @@ def in_inventory(vuln, invpath: str, applog: str, silent: bool):
             vuln["repo"], vuln["package"], vulnid))
         res = cur.fetchall()
     except Exception as e:
-        log_msg("Failed to check if vulnerability {},{},{} is in inventory at {}: {}"
-                .format(vuln["repo"], vuln["package"], vulnid, invpath, str(e)),
-                applog, "ERROR", silent)
+        lh.log_msg("Failed to check if vulnerability {},{},{} is in inventory at {}: {}"
+                   .format(vuln["repo"], vuln["package"], vulnid, invpath, str(e)), "ERROR")
         sys.exit(1)
     finally:
         conn.close()
@@ -143,7 +123,8 @@ def in_inventory(vuln, invpath: str, applog: str, silent: bool):
     else:
         return True
 
-def check_deps(applog: str, silent: bool):
+
+def check_deps(lh: LogHandler):
     try:
         res = subprocess.run(["local-php-security-checker", "-help"],
                              stdout=subprocess.DEVNULL,
@@ -151,7 +132,7 @@ def check_deps(applog: str, silent: bool):
         if res.returncode != 0:
             raise Exception()
     except Exception as e:
-        log_msg("local-php-security-checker not available: " + str(e), applog, "ERROR", silent)
+        lh.log_msg("local-php-security-checker not available: " + str(e), "ERROR")
         sys.exit(1)
 
     try:
@@ -161,7 +142,7 @@ def check_deps(applog: str, silent: bool):
         if res.returncode != 0:
             raise Exception()
     except Exception as e:
-        log_msg("npm audit not available: " + str(e), applog, "ERROR", silent)
+        lh.log_msg("npm audit not available: " + str(e), "ERROR")
         sys.exit(1)
 
 
@@ -175,13 +156,13 @@ def check_npm_report_format():
         return 1
 
 
-def read_repolist(path: str, applog: str, silent: bool):
+def read_repolist(path: str, lh: LogHandler):
     repolist = []
     try:
         with open(path, 'r') as fh:
             repolist = filter(None, fh.read().split('\n'))
     except Exception as e:
-        log_msg("Unable to read repolist: " + str(e), applog, "ERROR", silent)
+        lh.log_msg("Unable to read repolist: " + str(e), "ERROR")
         sys.exit(1)
     return repolist
 
@@ -200,9 +181,10 @@ def determine_checkers(repopath: str):
 
     return checkers
 
+
 @sleep_and_retry
 @limits(calls=10, period=60)
-def get_severity_from_nvd(cve_id: str, apikey: str, applog: str, silent: bool):
+def get_severity_from_nvd(cve_id: str, apikey: str, lh: LogHandler):
     severity = ""
 
     headers = {"Authorization": "Bearer " + apikey}
@@ -215,7 +197,7 @@ def get_severity_from_nvd(cve_id: str, apikey: str, applog: str, silent: bool):
 
         severity = json.loads(r.text)["result"]["CVE_Items"][0]["impact"]["baseMetricV2"]["severity"]
     except Exception as e:
-        log_msg("Failed to get severity for " + cve_id + ": " + str(e), applog, "WARNING", silent)
+        lh.log_msg("Failed to get severity for " + cve_id + ": " + str(e), "WARNING")
         pass  # worst case severity will be empty
 
     return severity
@@ -237,7 +219,7 @@ def get_details_from_ghsa(ghsa_id: str, apikey: str):
     return cveid, rdict["data"]["securityAdvisory"]["summary"]
 
 
-def get_vulns_composer(repopath: str, nvd_apikey: str, invpath: str, applog: str, silent: bool):
+def get_vulns_composer(repopath: str, nvd_apikey: str, invpath: str, lh: LogHandler):
     vulns = []
 
     try:
@@ -246,28 +228,28 @@ def get_vulns_composer(repopath: str, nvd_apikey: str, invpath: str, applog: str
                               "-format", "json"],
                              stdout=subprocess.PIPE)
     except subprocess.CalledProcessError as e:
-        log_msg("local-php-security-checker failed for " +
-                repopath + ". retcode: " + str(e.returncode), applog, "ERROR", silent)
+        lh.log_msg("local-php-security-checker failed for " +
+                   repopath + ". retcode: " + str(e.returncode), "ERROR")
         return []
-    
+
     for k, v in json.loads(res.stdout).items():
         for i in v["advisories"]:
             newvuln = {
                 "timestamp": datetime.datetime.now().isoformat(),
                 "repo": repopath,
                 "package": k,
-                "severity": get_severity_from_nvd(i["cve"], nvd_apikey, applog, silent),
+                "severity": get_severity_from_nvd(i["cve"], nvd_apikey, lh),
                 "ghsa": "",
                 "cve": i["cve"],
                 "description": i["title"]}
-            if not in_inventory(newvuln, invpath, applog, silent):
+            if not in_inventory(newvuln, invpath, lh):
                 vulns.append(newvuln)
-                store_vuln(newvuln, invpath, applog, silent)
+                store_vuln(newvuln, invpath, lh)
 
     return vulns
 
 
-def get_vulns_yarn(repopath: str, nvd_apikey: str, invpath: str, applog: str, silent: bool):
+def get_vulns_yarn(repopath: str, nvd_apikey: str, invpath: str, lh: LogHandler):
     vulns = []
 
     try:
@@ -275,8 +257,7 @@ def get_vulns_yarn(repopath: str, nvd_apikey: str, invpath: str, applog: str, si
                              cwd=repopath,
                              stdout=subprocess.PIPE)
     except subprocess.CalledProcessError as e:
-        log_msg("yarn audit failed for " +
-                repopath + ". retcode: " + str(e.returncode), applog, "ERROR", silent)
+        lh.log_msg("yarn audit failed for " + repopath + ". retcode: " + str(e.returncode), "ERROR")
         return []
 
     for i in res.stdout.splitlines():
@@ -287,19 +268,19 @@ def get_vulns_yarn(repopath: str, nvd_apikey: str, invpath: str, applog: str, si
                     "timestamp": datetime.datetime.now().isoformat(),
                     "repo": repopath,
                     "package": vulndata["data"]["advisory"]["module_name"],
-                    "severity": get_severity_from_nvd(j, nvd_apikey, applog, silent),
+                    "severity": get_severity_from_nvd(j, nvd_apikey, lh),
                     "ghsa": "",
                     "cve": j,
                     "description": vulndata["data"]["advisory"]["overview"]}
-                if not in_inventory(newvuln, invpath, applog, silent):
+                if not in_inventory(newvuln, invpath, lh):
                     vulns.append(newvuln)
-                    store_vuln(newvuln, invpath, applog, silent)
+                    store_vuln(newvuln, invpath, lh)
 
     return vulns
 
 
 def get_vulns_npm(repopath: str, gh_apikey: str, nvd_apikey: str, invpath: str, npm_report_format: int,
-        applog: str, silent: bool):
+                  lh: LogHandler):
     vulns = []
 
     res = subprocess.run(["npm", "audit",
@@ -310,8 +291,7 @@ def get_vulns_npm(repopath: str, gh_apikey: str, nvd_apikey: str, invpath: str, 
                          cwd=repopath)
 
     if res.stderr.decode("utf-8") != "":
-        log_msg("npm audit failed for " + repopath +
-                ". stderr: \n" + res.stderr.decode("utf-8"), applog, "ERROR", silent)
+        lh.log_msg("npm audit failed for " + repopath + ". stderr: " + res.stderr.decode("utf-8"), "ERROR")
         return []
 
     if npm_report_format == 1:
@@ -323,7 +303,7 @@ def get_vulns_npm(repopath: str, gh_apikey: str, nvd_apikey: str, invpath: str, 
                             "timestamp": datetime.datetime.now().isoformat(),
                             "repo": repopath,
                             "package": k,
-                            "severity": get_severity_from_nvd(l, nvd_apikey, applog, silent),
+                            "severity": get_severity_from_nvd(l, nvd_apikey, lh),
                             "ghsa": i["url"].rsplit('/', 1)[1],
                             "cve": l})
 
@@ -336,21 +316,22 @@ def get_vulns_npm(repopath: str, gh_apikey: str, nvd_apikey: str, invpath: str, 
                         "timestamp": datetime.datetime.now().isoformat(),
                         "repo": repopath,
                         "package": i["name"],
-                        "severity": get_severity_from_nvd(cveid, nvd_apikey, applog, silent),
+                        "severity": get_severity_from_nvd(cveid, nvd_apikey, lh),
                         "ghsa": j["url"].rsplit('/', 1)[1],
                         "cve": cveid,
                         "description": description
                     }
-                    if not newvuln in vulns and not in_inventory(newvuln, invpath, applog, silent):
+                    if not newvuln in vulns and not in_inventory(newvuln, invpath, lh):
                         vulns.append(newvuln)
-                        store_vuln(newvuln, invpath, applog, silent)
+                        store_vuln(newvuln, invpath, lh)
 
     return vulns
 
-def get_vulns_gradle(repopath: str, nvd_apikey: str, invpath: str, applog: str, silent: bool):
+
+def get_vulns_gradle(repopath: str, nvd_apikey: str, invpath: str, lh: LogHandler):
     vulns = []
 
-    gradle_init="""
+    gradle_init = """
 allprojects {
     buildscript {
         repositories {
@@ -377,8 +358,7 @@ allprojects {
         with open(repopath + "/depcheck-init.gradle", 'w') as fh:
             fh.write(gradle_init)
     except Exception as e:
-        log_msg("Unable to create " + repopath + "/depcheck-init.gradle: " + str(e),
-                applog, "ERROR", silent)
+        lh.log_msg("Unable to create " + repopath + "/depcheck-init.gradle: " + str(e), "ERROR")
         return []
 
     try:
@@ -387,8 +367,7 @@ allprojects {
                              stderr=subprocess.PIPE,
                              stdout=subprocess.PIPE)
     except Exception as e:
-        log_msg("Failed to run gradle dependency check on " + repopath + ": " + str(e), 
-                applog, "ERROR", silent)
+        lh.log_msg("Failed to run gradle dependency check on " + repopath + ": " + str(e), "ERROR")
         return []
 
     for i in glob.glob(repopath + "/**/build/reports/dependency-check-report.json"):
@@ -401,60 +380,64 @@ allprojects {
                             "timestamp": datetime.datetime.now().isoformat(),
                             "repo": repopath,
                             "package": j["packages"][0]["id"].split(':')[1],
-                            "severity": get_severity_from_nvd(k["name"], nvd_apikey, applog, silent),
+                            "severity": get_severity_from_nvd(k["name"], nvd_apikey, lh),
                             "cve": k["name"],
                             "description": k["description"]
                         }
 
-                        if not newvuln in vulns and not in_inventory(newvuln, invpath, applog, silent):
+                        if not newvuln in vulns and not in_inventory(newvuln, invpath, lh):
                             vulns.append(newvuln)
-                            store_vuln(newvuln, invpath, applog, silent)
+                            store_vuln(newvuln, invpath, lh)
 
     return vulns
 
 
 def get_vulns(checker: str, repopath: str, npm_report_format: int,
-              gh_apikey: str, nvd_apikey: str, invpath: str, applog: str, silent: bool):
+              gh_apikey: str, nvd_apikey: str, invpath: str, lh: LogHandler):
     vulns = []
 
     if checker == "composer":
-        vulns += get_vulns_composer(repopath, nvd_apikey, invpath, applog, silent)
+        vulns += get_vulns_composer(repopath, nvd_apikey, invpath, lh)
     elif checker == "yarn":
-        vulns += get_vulns_yarn(repopath, nvd_apikey, invpath, applog, silent)
+        vulns += get_vulns_yarn(repopath, nvd_apikey, invpath, lh)
     elif checker == "npm":
-        vulns += get_vulns_npm(repopath, gh_apikey, nvd_apikey, invpath, npm_report_format, applog, silent)
+        vulns += get_vulns_npm(repopath, gh_apikey, nvd_apikey, invpath, npm_report_format, lh)
     elif checker == "gradle":
-        vulns += get_vulns_gradle(repopath, nvd_apikey, invpath, applog, silent)
+        vulns += get_vulns_gradle(repopath, nvd_apikey, invpath, lh)
     else:
-        log_msg("Unsupported checker: " + checker, applog, "ERROR", silent)
+        lh.log_msg("Unsupported checker: " + checker, "ERROR")
         sys.exit(1)
 
     return vulns
 
 
-def read_apikey(file: str, applog: str, silent: bool):
+def read_apikey(file: str, lh: LogHandler):
     try:
         with open(file, 'r') as fh:
             return fh.read().rstrip('\n')
     except Exception:
-        log_msg("Unable to read apikey from " + file, applog, "ERROR", silent)
+        lh.log_msg("Unable to read apikey from " + file, "ERROR")
         sys.exit(1)
 
 
 def to_ecs(vuln):
-    ecsvuln = {}
-
-    ecsvuln["timestamp"] = vuln["timestamp"]
-    ecsvuln["service"] = {"name": "dep-vuln-checker"}
-    ecsvuln["vulnerability"] = {
-        "id": vuln["cve"] if vuln["cve"] != "" else vuln["ghsa"],
-        "severity": vuln["severity"],
-        "description": vuln["description"]
+    return {
+        "timestamp": vuln["timestamp"],
+        "service": {
+            "name": "dep-vuln-checker"
+        },
+        "vulnerability": {
+            "id": vuln["cve"] if vuln["cve"] != "" else vuln["ghsa"],
+            "severity": vuln["severity"],
+            "description": vuln["description"]
+        },
+        "package": {
+            "name": vuln["package"]
+        },
+        "file": {
+            "directory": vuln["repo"]
+        }
     }
-    ecsvuln["package"] = {"name": vuln["package"]}
-    ecsvuln["file"] = {"directory": vuln["repo"]}
-
-    return ecsvuln
 
 
 def print_vulns(vulns):
@@ -468,12 +451,12 @@ def print_vulns(vulns):
             i["cve"]]))
 
 
-def write_vulns_json(vulns, applog: str, vulnlog: str, silent: bool):
+def write_vulns_json(vulns, vulnlog: str, lh: LogHandler):
     if vulnlog != "stdout":
         try:
             fh = open(vulnlog, "a")
         except OSError:
-            log_msg("Failed to open " + vulnlog, "ERROR", applog, silent)
+            lh.log_msg("Failed to open " + vulnlog, "ERROR")
             sys.exit(1)
 
     if vulnlog != "stdout":
@@ -484,17 +467,22 @@ def write_vulns_json(vulns, applog: str, vulnlog: str, silent: bool):
         for i in vulns:
             print(json.dumps(to_ecs(i)))
 
+
 def patch_req_cache(redis_host, redis_port):
     redisbackend = requests_cache.backends.RedisCache(host=redis_host, port=redis_port)
     requests_cache.install_cache('globalcache', backend=redisbackend, expire_after=datetime.timedelta(days=7))
 
+
 def main():
     args = parse_args()
-    log_msg("Started", "INFO", args.applog, args.s)
-    check_deps(args.applog, args.s)
+
+    lh = LogHandler.LogHandler(args.applog, args.s)
+
+    lh.log_msg("Started", "INFO")
+    check_deps(lh)
 
     if args.invpath != "none":
-        create_inventory(args.invpath, args.applog, args.s)
+        create_inventory(args.invpath, lh)
 
     if args.cachetype == "redis":
         patch_req_cache(args.redishost, args.redisport)
@@ -506,30 +494,31 @@ def main():
         checkers = determine_checkers(repo)
         if len(checkers) > 0:
             for j in checkers:
-                log_msg("Getting vulnerabilities for repo=" + repo + ",checker=" + j, "INFO", args.applog, args.s)
+                lh.log_msg("Getting vulnerabilities for repo=" + repo + ",checker=" + j, "INFO")
                 allvulns = get_vulns(j, repo, check_npm_report_format(),
-                                          read_apikey(args.gh_apikey_file, args.applog, args.s),
-                                          read_apikey(args.nvd_apikey_file, args.applog, args.s),
-                                          args.invpath, args.applog, args.s)
-                log_msg(str(len(allvulns)) + " new vulnerabilities found for repo=" + repo + ",checker=" + j, "INFO", args.applog, args.s)
+                                     read_apikey(args.gh_apikey_file, lh),
+                                     read_apikey(args.nvd_apikey_file, lh),
+                                     args.invpath, lh)
+                lh.log_msg(str(len(allvulns)) + " new vulnerabilities found for repo=" + repo + ",checker=" + j, "INFO")
     # check a list of repos
     elif os.path.isfile(args.repolist):
-        for i in read_repolist(args.repolist, args.applog, args.s):
+        for i in read_repolist(args.repolist, lh):
             checkers = determine_checkers(i)
             if len(checkers) > 0:
                 for j in checkers:
-                    log_msg("Getting vulnerabilities for repo=" + i + ",checker=" + j, "INFO", args.applog, args.s)
+                    lh.log_msg("Getting vulnerabilities for repo=" + i + ",checker=" + j, "INFO")
                     newvulns = get_vulns(j, i, check_npm_report_format(),
-                                          read_apikey(args.gh_apikey_file, args.applog, args.s),
-                                          read_apikey(args.nvd_apikey_file, args.applog, args.s),
-                                          args.invpath, args.applog, args.s)
+                                         read_apikey(args.gh_apikey_file, lh),
+                                         read_apikey(args.nvd_apikey_file, lh),
+                                         args.invpath, lh)
                     allvulns += newvulns
-                    log_msg(str(len(newvulns)) + " new vulnerabilities found for repo=" + i + ",checker=" + j, "INFO", args.applog, args.s)
+                    lh.log_msg(str(len(newvulns)) + " new vulnerabilities found for repo=" + i + ",checker=" + j,
+                               "INFO")
     else:
-        log_msg("repolist argument is not a dir or file, exit", "ERROR", args.applog, args.s)
+        lh.log_msg("repolist argument is not a dir or file, exit", "ERROR")
 
-    write_vulns_json(allvulns, args.applog, args.vulnlog, args.s)
-    log_msg("Done", "INFO", args.applog, args.s)
+    write_vulns_json(allvulns, args.vulnlog, lh)
+    lh.log_msg("Done", "INFO")
 
 
 if __name__ == '__main__':
