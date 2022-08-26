@@ -10,6 +10,7 @@ import json
 import time
 import requests
 import requests_cache
+from ratelimit import limits, sleep_and_retry
 import redis
 import glob
 import datetime
@@ -199,18 +200,22 @@ def determine_checkers(repopath: str):
 
     return checkers
 
-
+@sleep_and_retry
+@limits(calls=10, period=60)
 def get_severity_from_nvd(cve_id: str, apikey: str, applog: str, silent: bool):
     severity = ""
 
     headers = {"Authorization": "Bearer " + apikey}
 
-    r = requests.get("https://services.nvd.nist.gov/rest/json/cve/1.0/" + cve_id)
-
     try:
+        r = requests.get("https://services.nvd.nist.gov/rest/json/cve/1.0/" + cve_id, headers=headers)
+
+        if r.status_code != 200:
+            raise Exception('API response: {}'.format(r.status_code))
+
         severity = json.loads(r.text)["result"]["CVE_Items"][0]["impact"]["baseMetricV2"]["severity"]
-    except Exception:
-        log_msg("Failed to get severity for " + cve_id, applog, "WARNING", silent)
+    except Exception as e:
+        log_msg("Failed to get severity for " + cve_id + ": " + str(e), applog, "WARNING", silent)
         pass  # worst case severity will be empty
 
     return severity
@@ -251,7 +256,7 @@ def get_vulns_composer(repopath: str, nvd_apikey: str, invpath: str, applog: str
                 "timestamp": datetime.datetime.now().isoformat(),
                 "repo": repopath,
                 "package": k,
-                "severity": get_severity_from_nvd(i["cve"], nvd_apikey),
+                "severity": get_severity_from_nvd(i["cve"], nvd_apikey, applog, silent),
                 "ghsa": "",
                 "cve": i["cve"],
                 "description": i["title"]}
@@ -282,7 +287,7 @@ def get_vulns_yarn(repopath: str, nvd_apikey: str, invpath: str, applog: str, si
                     "timestamp": datetime.datetime.now().isoformat(),
                     "repo": repopath,
                     "package": vulndata["data"]["advisory"]["module_name"],
-                    "severity": get_severity_from_nvd(j, nvd_apikey),
+                    "severity": get_severity_from_nvd(j, nvd_apikey, applog, silent),
                     "ghsa": "",
                     "cve": j,
                     "description": vulndata["data"]["advisory"]["overview"]}
@@ -318,7 +323,7 @@ def get_vulns_npm(repopath: str, gh_apikey: str, nvd_apikey: str, invpath: str, 
                             "timestamp": datetime.datetime.now().isoformat(),
                             "repo": repopath,
                             "package": k,
-                            "severity": get_severity_from_nvd(l, nvd_apikey),
+                            "severity": get_severity_from_nvd(l, nvd_apikey, applog, silent),
                             "ghsa": i["url"].rsplit('/', 1)[1],
                             "cve": l})
 
@@ -331,7 +336,7 @@ def get_vulns_npm(repopath: str, gh_apikey: str, nvd_apikey: str, invpath: str, 
                         "timestamp": datetime.datetime.now().isoformat(),
                         "repo": repopath,
                         "package": i["name"],
-                        "severity": get_severity_from_nvd(cveid, nvd_apikey),
+                        "severity": get_severity_from_nvd(cveid, nvd_apikey, applog, silent),
                         "ghsa": j["url"].rsplit('/', 1)[1],
                         "cve": cveid,
                         "description": description
@@ -396,7 +401,7 @@ allprojects {
                             "timestamp": datetime.datetime.now().isoformat(),
                             "repo": repopath,
                             "package": j["packages"][0]["id"].split(':')[1],
-                            "severity": get_severity_from_nvd(k["name"], nvd_apikey),
+                            "severity": get_severity_from_nvd(k["name"], nvd_apikey, applog, silent),
                             "cve": k["name"],
                             "description": k["description"]
                         }
