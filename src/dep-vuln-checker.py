@@ -35,13 +35,16 @@ def parse_args():
                         help="Inventory database location or \"none\" (default: /var/lib/dep-vuln-checker/inventory.db)",
                         default="/var/lib/dep-vuln-checker/inventory.db")
     parser.add_argument('-c', dest="reqcachetype", type=str,
-                        help="request cache type. Allowed values: redis (no request cache used if omitted)",
+                        help="request cache type. Allowed values: redis, sqlite (no request cache used if omitted)",
                         default=None)
+    parser.add_argument('-cp', dest="reqcachepath", type=str,
+                        help="reqest cache database path when using sqlite cache type (default: /var/lib/dep-vuln-checker/reqcache.db",
+                        default="/var/lib/dep-vuln-checker/reqcache.db")
     parser.add_argument('-rh', dest="redishost", type=str,
-                        help="redis host for request cache (default: 127.0.0.1)",
+                        help="redis host for request cache when using redis cache type (default: 127.0.0.1)",
                         default="127.0.0.1")
     parser.add_argument('-rp', dest="redisport", type=int,
-                        help="redis port for request cache (default: 6379)",
+                        help="redis port for request cache when using redis cache type (default: 6379)",
                         default=6379)
     parser.add_argument("-s", action="store_true",
                         help="silent mode - no output")
@@ -109,9 +112,14 @@ def read_apikey(file: str, lh: LogHandler):
         sys.exit(1)
 
 
-def patch_req_cache(redis_host, redis_port):
+def patch_req_cache_redis(redis_host, redis_port):
     redisbackend = requests_cache.backends.RedisCache(host=redis_host, port=redis_port)
     requests_cache.install_cache('globalcache', backend=redisbackend, expire_after=datetime.timedelta(days=7))
+
+
+def patch_req_cache_sqlite(reqcachepath):
+    sqlitebackend = requests_cache.backends.SQLiteCache(db_path=reqcachepath)
+    requests_cache.install_cache('globalcache', backend=sqlitebackend, expire_after=datetime.timedelta(days=7))
 
 
 def main():
@@ -131,7 +139,9 @@ def main():
         inventoryrepo = None
 
     if args.reqcachetype == "redis":
-        patch_req_cache(args.redishost, args.redisport)
+        patch_req_cache_redis(args.redishost, args.redisport)
+    if args.reqcachetype == "sqlite":
+        patch_req_cache_sqlite(args.reqcachepath)
 
     if args.I:
         nvdrepo.first_run()
