@@ -1,2 +1,5 @@
 .idea
 *.swp
+venv
+src/__pycache__/
+src/ize.sh
