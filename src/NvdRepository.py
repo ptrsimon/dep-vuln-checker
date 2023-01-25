@@ -27,11 +27,12 @@ class NvdRepository:
             lh.log_msg("Failed to connect to " + self.redis_host + ": " + str(e), "ERROR")
             sys.exit(1)
 
-        lh.log_msg("Connected to redis at " + self.redis_host, "INFO")
+        lh.log_msg("Connected to redis at {}:{}".format(self.redis_host, self.redis_port), "INFO")
 
     def fetch_json(self, years):
         for i in years:
             try:
+                self.lh.log_msg("Downloading https://nvd.nist.gov/feeds/json/cve/1.1/nvdcve-1.1-{}.json.gz".format(i), "INFO")
                 resp = urlopen("https://nvd.nist.gov/feeds/json/cve/1.1/nvdcve-1.1-{}.json.gz".format(i))
                 CHUNK = 16 * 1024
                 with open("{}/{}.json.gz".format("/tmp", i), 'wb') as fh:
@@ -54,6 +55,8 @@ class NvdRepository:
             self.lh.log_msg("Failed to parse NVD JSON dump: " + str(e), "ERROR")
             sys.exit(1)
 
+        self.lh.log_msg("Processing {}".format(path), "INFO")
+
         for i in cvedb["CVE_Items"]:
             severity = "unknown"
             if "baseMetricV2" in i["impact"] and "severity" in i["impact"]["baseMetricV2"]:
@@ -73,9 +76,6 @@ class NvdRepository:
     # downloads all available jsons and adds all entries to DB
     def first_run(self):
         self.fetch_json(range(2002, date.today().year))
-        for i in range(2002, date.today().year):
-            self.load_jsongz("/tmp/" + str(i) + ".json.gz")
-
         for i in range(2002, date.today().year):
             self.load_jsongz("/tmp/" + str(i) + ".json.gz")
 

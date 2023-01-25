@@ -41,10 +41,10 @@ def parse_args():
                         help="reqest cache database path when using sqlite cache type (default: /var/lib/dep-vuln-checker/reqcache.db",
                         default="/var/lib/dep-vuln-checker/reqcache.db")
     parser.add_argument('-rh', dest="redishost", type=str,
-                        help="redis host for request cache when using redis cache type (default: 127.0.0.1)",
+                        help="redis host for request cache and/or severity cache (default: 127.0.0.1)",
                         default="127.0.0.1")
     parser.add_argument('-rp', dest="redisport", type=int,
-                        help="redis port for request cache when using redis cache type (default: 6379)",
+                        help="redis port for request cache and/or severity cache (default: 6379)",
                         default=6379)
     parser.add_argument("-s", action="store_true",
                         help="silent mode - no output")
@@ -52,8 +52,8 @@ def parse_args():
                         help="temp directory to download NVD JSON files (default: /tmp)",
                         default="/tmp")
     parser.add_argument("-I", action="store_true",
-                        help="initialize database and exit")
-    parser.add_argument('dirlist',
+                        help="initialize local NVD cache and exit")
+    parser.add_argument('dirlist', nargs='?' if '-I' in sys.argv else 1,
                         help="location of newline separated file which contains the project dir paths to check OR a single path if only one project needs to be checked")
 
     return parser.parse_args()
@@ -130,7 +130,6 @@ def main():
                                           args.redishost, args.redisport, lh)
     ghsarepo = GhsaRepository.GhsaRepository(read_apikey(args.gh_apikey_file, lh), lh)
 
-    lh.log_msg("Started", "INFO")
     check_deps(lh)
 
     if args.invpath != "none":
@@ -144,6 +143,7 @@ def main():
         patch_req_cache_sqlite(args.reqcachepath)
 
     if args.I:
+        lh.log_msg("-I given, creating local severity database from scratch", "INFO")
         nvdrepo.first_run()
         sys.exit(0)
 

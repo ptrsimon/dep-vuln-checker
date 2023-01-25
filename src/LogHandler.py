@@ -13,7 +13,7 @@ class LogHandler:
 
     def log_msg(self, msg: str, level: str):
         if not self.silent:
-            print(msg)
+            print("[{}] {}".format(level, msg))
 
         try:
             fh = open(self.logfile, 'a')
