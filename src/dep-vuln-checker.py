@@ -147,13 +147,13 @@ def main():
         nvdrepo.first_run()
         sys.exit(0)
 
-    if os.path.isdir(args.dirlist):
-        directory = CodeDir(args.dirlist, lh)
+    if os.path.isdir(args.dirlist[0]):
+        directory = CodeDir(args.dirlist[0], lh)
         directory.set_checkers(nvdrepo, ghsarepo, inventoryrepo)
         directory.run_checkers()
         directory.write_vulns_json(args.vulnlog)
-    elif os.path.isfile(args.dirlist):
-        for i in read_repolist(args.dirlist, lh):
+    elif os.path.isfile(args.dirlist[0]):
+        for i in read_repolist(args.dirlist[0], lh):
             directory = CodeDir(i, lh)
             directory.set_checkers(nvdrepo, ghsarepo, inventoryrepo)
             directory.run_checkers()
