@@ -81,10 +81,10 @@ class NvdRepository:
 
     @sleep_and_retry
     @limits(calls=10, period=60)
-    def get_severity_from_nvd(self, cve_id: str, apikey: str, lh: LogHandler):
+    def get_severity_from_nvd(self, cve_id: str):
         severity = ""
 
-        headers = {"apiKey": apikey}
+        headers = {"apiKey": self.nvd_apikey}
 
         try:
             r = requests.get("https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=" + cve_id, headers=headers)
@@ -95,15 +95,21 @@ class NvdRepository:
             severity = json.loads(r.text)["vulnerabilities"][0]["cve"]["metrics"]["cvssMetricV31"][0]["cvssData"][
                 "baseSeverity"]
         except Exception as e:
-            lh.log_msg("Failed to get severity for " + cve_id + ": " + str(e), "WARNING")
+            self.lh.log_msg("Failed to get severity for " + cve_id + " from NVD API: " + str(e), "WARNING")
             pass  # worst case severity will be empty
 
         return severity
 
     def get_severity(self, cveid: str):
-        severity = self.rediscon.hget("nvd_severity_cache", cveid).decode("utf-8")
+        severity = ""
+
+        try:
+            severity = self.rediscon.hget("nvd_severity_cache", cveid)
+        except Exception as e:
+            self.lh.log_msg("Failed to get severity for " + cveid + " from local severity cache: " + str(e), "WARNING")
+            pass
 
         if severity is None:
-            return self.get_severity_from_nvd(cveid, self.nvd_apikey, self.lh)
+            return self.get_severity_from_nvd(cveid)
         else:
-            return severity
+            return severity.decode("utf-8")
