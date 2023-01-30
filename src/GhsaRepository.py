@@ -21,6 +21,9 @@ class GhsaRepository:
 
         r = requests.post('https://api.github.com/graphql', json=query, headers=headers)
 
+        if r.status_code != 200:
+            raise Exception('Failed to get details from GHSA, API response: {}'.format(r.status_code))
+
         rdict = json.loads(r.text)
         for i in rdict["data"]["securityAdvisory"]["identifiers"]:
             if i["type"] == "CVE":
