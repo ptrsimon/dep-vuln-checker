@@ -46,6 +46,9 @@ def parse_args():
     parser.add_argument('-rp', dest="redisport", type=int,
                         help="redis port for request cache and/or severity cache (default: 6379)",
                         default=6379)
+    parser.add_argument('-r', dest="ghsarepopath", type=str,
+                        help="directory to clone GitHub Advisory Database to",
+                        default="/var/lib/dep-vuln-checker/ghsa")
     parser.add_argument("-s", action="store_true",
                         help="silent mode - no output")
     parser.add_argument("-t", dest="nvd_download_tmpdir", type=str,
@@ -128,7 +131,7 @@ def main():
     lh = LogHandler.LogHandler(args.applog, args.s)
     nvdrepo = NvdRepository.NvdRepository(read_apikey(args.nvd_apikey_file, lh),
                                           args.redishost, args.redisport, lh)
-    ghsarepo = GhsaRepository.GhsaRepository(read_apikey(args.gh_apikey_file, lh), lh)
+    ghsarepo = GhsaRepository.GhsaRepository(read_apikey(args.gh_apikey_file, lh), args.redishost, args.redisport, lh)
 
     check_deps(lh)
 
@@ -143,8 +146,10 @@ def main():
         patch_req_cache_sqlite(args.reqcachepath)
 
     if args.I:
-        lh.log_msg("-I given, creating local severity database from scratch", "INFO")
+        lh.log_msg("-I given, creating local databases from scratch", "INFO")
         nvdrepo.first_run()
+        ghsarepo.download_ghsa_data(args.ghsarepopath)
+        ghsarepo.load_ghsa_data(args.ghsarepopath)
         sys.exit(0)
 
     if os.path.isdir(args.dirlist[0]):

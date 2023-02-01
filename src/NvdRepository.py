@@ -107,7 +107,6 @@ class NvdRepository:
             severity = self.rediscon.hget("nvd_severity_cache", cveid)
         except Exception as e:
             self.lh.log_msg("Failed to get severity for " + cveid + " from local severity cache: " + str(e), "WARNING")
-            pass
 
         if severity is None:
             return self.get_severity_from_nvd(cveid)

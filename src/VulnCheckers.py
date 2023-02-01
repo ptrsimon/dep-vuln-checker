@@ -140,19 +140,16 @@ class NpmVulnChecker(VulnChecker):
 
         if self.npm_report_format == 1:
             for i in json.loads(res.stdout)['advisories'].values():
-                for j in i["findings"]:
-                    for k in j["paths"]:
-                        for l in i["cves"]:
-                            newvuln = Vulnerability(
-                                dirpath=self.directory,
-                                package=k,
-                                vulnid=l,
-                                severity=self.nvdrepo.get_severity(l),
-                                description=self.ghasrepo.get_details(i["url"].rsplit('/', 1)[1])[1]
-                            )
-                            if newvuln not in vulns and not self.in_invrepo(newvuln):
-                                vulns.append(newvuln)
-                                self.append_to_invrepo(newvuln)
+                newvuln = Vulnerability(
+                    dirpath=self.directory,
+                    package=i["module_name"],
+                    vulnid=i["cves"][0],
+                    severity=self.nvdrepo.get_severity(i["cves"][0]),
+                    description=self.ghasrepo.get_details(i["github_advisory_id"])
+                )
+                if newvuln not in vulns and not self.in_invrepo(newvuln):
+                    vulns.append(newvuln)
+                    self.append_to_invrepo(newvuln)
 
         elif self.npm_report_format == 2:
             for i in json.loads(res.stdout)["vulnerabilities"].values():
