@@ -48,9 +48,9 @@ class GhsaRepository:
             fh = open(i, 'r')
             data = json.load(fh)
             if "summary" in data:
-                self.rediscon.hset("ghsa_details_cache", data["id"], data["summary"])
+                self.rediscon.hset("ghsa_details_cache", data["id"], (data["aliases"][0] if data["aliases"] else "") + "," + data["summary"])
             else:
-                self.rediscon.hset("ghsa_details_cache", data["id"], data["details"])
+                self.rediscon.hset("ghsa_details_cache", data["id"], (data["aliases"][0] if data["aliases"] else "") + "," + data["details"])
 
     def get_details_from_gh(self, ghsa_id: str):
         cveid = ""
@@ -68,7 +68,7 @@ class GhsaRepository:
             if i["type"] == "CVE":
                 cveid = i["value"]
 
-        if "summary" in data:
+        if "summary" in rdict["data"]["securityAdvisory"]:
             return cveid, rdict["data"]["securityAdvisory"]["summary"]
         else:
             return cveid, rdict["data"]["securityAdvisory"]["details"]
@@ -84,4 +84,4 @@ class GhsaRepository:
         if details is None:
             return self.get_details_from_gh(ghsa_id)
         else:
-            return details.decode("utf-8")
+            return details.decode("utf-8").split(',')

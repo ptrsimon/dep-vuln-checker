@@ -145,7 +145,7 @@ class NpmVulnChecker(VulnChecker):
                     package=i["module_name"],
                     vulnid=i["cves"][0],
                     severity=self.nvdrepo.get_severity(i["cves"][0]),
-                    description=self.ghasrepo.get_details(i["github_advisory_id"])
+                    description=self.ghasrepo.get_details(i["github_advisory_id"])[1]
                 )
                 if newvuln not in vulns and not self.in_invrepo(newvuln):
                     vulns.append(newvuln)
@@ -155,12 +155,14 @@ class NpmVulnChecker(VulnChecker):
             for i in json.loads(res.stdout)["vulnerabilities"].values():
                 for j in i["via"]:
                     if "url" in j and type(j) is dict:
-                        cveid, description = self.ghasrepo.get_details(j["url"].rsplit('/', 1)[1])
+                        details = self.ghasrepo.get_details(j["url"].rsplit('/', 1)[1])
+                        cveid = details[0]
+                        description = details[1]
                         newvuln = Vulnerability(
                             dirpath=self.directory,
                             package=i["name"],
                             vulnid=cveid,
-                            severity=self.nvdrepo.get_severity(cveid),
+                            severity=i["severity"],
                             description=description
                         )
                         if newvuln not in vulns and not self.in_invrepo(newvuln):

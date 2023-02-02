@@ -109,6 +109,7 @@ class NvdRepository:
             self.lh.log_msg("Failed to get severity for " + cveid + " from local severity cache: " + str(e), "WARNING")
 
         if severity is None:
+            self.lh.log_msg("Severity for " + cveid + " not found in local cache, falling back to querying NVD API", "WARNING")
             return self.get_severity_from_nvd(cveid)
         else:
             return severity.decode("utf-8")
