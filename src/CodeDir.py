@@ -52,4 +52,4 @@ class CodeDir:
             for i in self.vulnerabilities:
                 print(json.dumps(i.to_ecs()))
 
-        self.lh.log_msg("Vulnerabilities written to " + vulnlog, "INFO")
+        self.lh.log_msg("{} vulnerabilities written to {}".format(len(self.vulnerabilities), vulnlog), "INFO")
