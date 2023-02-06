@@ -9,6 +9,7 @@ import os.path
 import requests_cache
 import datetime
 import argparse
+import redis
 import LogHandler
 import NvdRepository
 import GhsaRepository
@@ -94,7 +95,6 @@ def check_deps(lh: LogHandler):
         sys.exit(1)
 
 
-
 def read_repolist(path: str, lh: LogHandler):
     repolist = []
     try:
@@ -129,9 +129,16 @@ def main():
     args = parse_args()
 
     lh = LogHandler.LogHandler(args.applog, args.s)
-    nvdrepo = NvdRepository.NvdRepository(read_apikey(args.nvd_apikey_file, lh),
-                                          args.redishost, args.redisport, lh)
-    ghsarepo = GhsaRepository.GhsaRepository(read_apikey(args.gh_apikey_file, lh), args.redishost, args.redisport, lh)
+
+    try:
+        rediscon = redis.Redis(host=args.redishost, port=args.redisport)
+    except Exception as e:
+        lh.log_msg("Failed to connect to redis at {}:{}: {}".format(args.redishost, args.redisport, str(e)), "ERROR")
+        sys.exit(1)
+    lh.log_msg("Connected to redis at {}:{}".format(args.redishost, args.redisport), "INFO")
+
+    nvdrepo = NvdRepository.NvdRepository(read_apikey(args.nvd_apikey_file, lh), rediscon, lh)
+    ghsarepo = GhsaRepository.GhsaRepository(read_apikey(args.gh_apikey_file, lh), rediscon, lh)
 
     check_deps(lh)
 

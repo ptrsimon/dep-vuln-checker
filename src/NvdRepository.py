@@ -15,19 +15,10 @@ from ratelimit import limits, sleep_and_retry
 
 
 class NvdRepository:
-    def __init__(self, nvd_apikey: str, redis_host: str, redis_port: int, lh: LogHandler):
+    def __init__(self, nvd_apikey: str, rediscon: redis.Redis, lh: LogHandler):
         self.nvd_apikey = nvd_apikey
-        self.redis_host = redis_host
-        self.redis_port = redis_port
+        self.rediscon = rediscon
         self.lh = lh
-
-        try:
-            self.rediscon = redis.Redis(host=self.redis_host, port=self.redis_port)
-        except Exception as e:
-            lh.log_msg("Failed to connect to " + self.redis_host + ": " + str(e), "ERROR")
-            sys.exit(1)
-
-        lh.log_msg("Connected to redis at {}:{}".format(self.redis_host, self.redis_port), "INFO")
 
     def fetch_json(self, years):
         for i in years:

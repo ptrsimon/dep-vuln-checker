@@ -15,19 +15,10 @@ from os import path
 
 
 class GhsaRepository:
-    def __init__(self, gh_apikey: str, redis_host: str, redis_port: int, lh: LogHandler):
+    def __init__(self, gh_apikey: str, rediscon: redis.Redis, lh: LogHandler):
         self.gh_apikey = gh_apikey
         self.lh = lh
-        self.redis_host = redis_host
-        self.redis_port = redis_port
-
-        try:
-            self.rediscon = redis.Redis(host=self.redis_host, port=self.redis_port)
-        except Exception as e:
-            self.lh.log_msg("Failed to connect to " + self.redis_host + ": " + str(e), "ERROR")
-            sys.exit(1)
-
-        self.lh.log_msg("Connected to redis at {}:{}".format(self.redis_host, self.redis_port), "INFO")
+        self.rediscon = rediscon
 
     def download_ghsa_data(self, advrepopath):
         try:
