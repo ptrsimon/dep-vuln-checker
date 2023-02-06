@@ -96,12 +96,16 @@ class NvdRepository:
                 "baseSeverity"]
         except Exception as e:
             self.lh.log_msg("Failed to get severity for " + cve_id + " from NVD API: " + str(e), "WARNING")
-            pass  # worst case severity will be empty
+            return "unknown"
 
         return severity
 
     def get_severity(self, cveid: str):
         severity = ""
+
+        if cveid == "":
+            self.lh.log_msg("Empty CVE ID for vulnerability, setting severity to unknown", "INFO")
+            return "unknown"
 
         try:
             severity = self.rediscon.hget("nvd_severity_cache", cveid)
