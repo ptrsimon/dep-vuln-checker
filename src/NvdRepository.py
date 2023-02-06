@@ -92,6 +92,10 @@ class NvdRepository:
         return severity
 
     def get_severity(self, cveid: str):
+        translationmap = {
+            "MEDIUM": "moderate"
+        }
+
         severity = ""
 
         if cveid == "":
@@ -107,4 +111,5 @@ class NvdRepository:
             self.lh.log_msg("Severity for " + cveid + " not found in local cache, falling back to querying NVD API", "WARNING")
             return self.get_severity_from_nvd(cveid)
         else:
-            return severity.decode("utf-8")
+            return translationmap[severity.decode("utf-8")]\
+                if severity.decode("utf-8") in translationmap else severity.decode("utf-8").lower()
