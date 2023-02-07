@@ -25,6 +25,8 @@ class CodeDir:
     def set_checkers(self, nvdrepo: NvdRepository, ghsarepo: GhsaRepository, invrepo: InventoryRepository = None):
         if os.path.isfile(self.path + "/package.json") and os.path.isfile(self.path + "/package-lock.json"):
             self.checkers.append(VulnCheckers.NpmVulnChecker(self.path, nvdrepo, ghsarepo, self.lh, invrepo))
+        if os.path.isfile(self.path + "/package.json") and os.path.isfile(self.path + "/pnpm-lock.yaml"):
+            self.checkers.append(VulnCheckers.PnpmVulnChecker(self.path, nvdrepo, ghsarepo, self.lh, invrepo))
         if os.path.isfile(self.path + "/composer.lock"):
             self.checkers.append(VulnCheckers.ComposerVulnChecker(self.path, nvdrepo, ghsarepo, self.lh, invrepo))
         if os.path.isfile(self.path + "/yarn.lock"):

@@ -107,6 +107,41 @@ class YarnVulnChecker(VulnChecker):
         return vulns
 
 
+class PnpmVulnChecker(VulnChecker):
+    def __init__(self, directory: str, nvdrepo: NvdRepository, ghsarepo: GhsaRepository,
+                 lh: LogHandler, invrepo: InventoryRepository = None):
+        super().__init__(directory, nvdrepo, ghsarepo, lh, invrepo)
+
+    def do_check(self) -> List[Vulnerability]:
+        vulns = []
+
+        res = subprocess.run(["pnpm", "audit",
+                              "--registry=https://registry.npmjs.org",
+                              "--json"],
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE,
+                             cwd=self.directory)
+
+        if res.stderr.decode("utf-8") != "":
+            self.lh.log_msg("pnpm audit failed for " + self.directory + ". stderr: " + res.stderr.decode("utf-8"),
+                            "ERROR")
+            return []
+
+        for i in json.loads(res.stdout)['advisories'].values():
+            newvuln = Vulnerability(
+                dirpath=self.directory,
+                package=i["module_name"],
+                vulnid=i["cves"][0],
+                severity=i["severity"],
+                description=i["title"]
+            )
+            if newvuln not in vulns and not self.in_invrepo(newvuln):
+                vulns.append(newvuln)
+                self.append_to_invrepo(newvuln)
+
+        return vulns
+
+
 class NpmVulnChecker(VulnChecker):
     def __init__(self, directory: str, nvdrepo: NvdRepository, ghsarepo: GhsaRepository,
                  lh: LogHandler, invrepo: InventoryRepository = None):
