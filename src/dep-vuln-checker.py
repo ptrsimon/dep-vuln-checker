@@ -57,7 +57,7 @@ def parse_args():
                         default="/tmp")
     parser.add_argument("-I", action="store_true",
                         help="initialize local NVD cache and exit")
-    parser.add_argument('dirlist', nargs='?' if '-I' in sys.argv else 1,
+    parser.add_argument('dirlist', nargs='?' if '-I' in sys.argv else '+',
                         help="location of newline separated file which contains the project dir paths to check OR a single path if only one project needs to be checked")
 
     return parser.parse_args()
@@ -137,6 +137,7 @@ def patch_req_cache_sqlite(reqcachepath):
 
 def main():
     args = parse_args()
+    print(args.dirlist)
 
     lh = LogHandler.LogHandler(args.applog, args.s)
 
@@ -169,19 +170,20 @@ def main():
         ghsarepo.load_ghsa_data(args.ghsarepopath)
         sys.exit(0)
 
-    if os.path.isdir(args.dirlist[0]):
-        directory = CodeDir(args.dirlist[0], lh)
-        directory.set_checkers(nvdrepo, ghsarepo, inventoryrepo)
-        directory.run_checkers()
-        directory.write_vulns_json(args.vulnlog)
-    elif os.path.isfile(args.dirlist[0]):
-        for i in read_repolist(args.dirlist[0], lh):
+    for i in args.dirlist:
+        if os.path.isdir(i):
             directory = CodeDir(i, lh)
             directory.set_checkers(nvdrepo, ghsarepo, inventoryrepo)
             directory.run_checkers()
             directory.write_vulns_json(args.vulnlog)
-    else:
-        lh.log_msg("repolist argument is not a dir or file, exit", "ERROR")
+        elif os.path.isfile(i):
+            for j in read_repolist(i, lh):
+                directory = CodeDir(j, lh)
+                directory.set_checkers(nvdrepo, ghsarepo, inventoryrepo)
+                directory.run_checkers()
+                directory.write_vulns_json(args.vulnlog)
+        else:
+            lh.log_msg("repolist argument is not a dir or file, skipping {}".format(i), "WARN")
 
     lh.log_msg("Done", "INFO")
 
