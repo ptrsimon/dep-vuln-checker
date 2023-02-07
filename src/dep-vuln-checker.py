@@ -85,6 +85,16 @@ def check_deps(lh: LogHandler):
         sys.exit(1)
 
     try:
+        res = subprocess.run(["pnpm", "audit", "-h"],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        if res.returncode != 0:
+            raise Exception()
+    except Exception as e:
+        lh.log_msg("pnpm audit not available: " + str(e), "ERROR")
+        sys.exit(1)
+
+    try:
         res = subprocess.run(["yarn", "-v"],
                              stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL)
