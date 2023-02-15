@@ -45,7 +45,7 @@ optional arguments:
   -r GHSAREPOPATH       directory to clone GitHub Advisory Database to
   -s                    silent mode - no output
   -t NVD_DOWNLOAD_TMPDIR temp directory to download NVD JSON files (default: /tmp)
-  -I                    initialize local NVD cache and exit
+  -I                    initialize local NVD + GHSA cache and exit
 ```
 
 ## Dependencies

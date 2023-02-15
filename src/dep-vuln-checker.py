@@ -56,7 +56,7 @@ def parse_args():
                         help="temp directory to download NVD JSON files (default: /tmp)",
                         default="/tmp")
     parser.add_argument("-I", action="store_true",
-                        help="initialize local NVD cache and exit")
+                        help="initialize local NVD + GHSA cache and exit")
     parser.add_argument('dirlist', nargs='?' if '-I' in sys.argv else '+',
                         help="location of newline separated file which contains the project dir paths to check OR a single path if only one project needs to be checked")
 
