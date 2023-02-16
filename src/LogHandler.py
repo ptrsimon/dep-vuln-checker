@@ -15,6 +15,9 @@ class LogHandler:
         if not self.silent:
             print("[{}] {}".format(level, msg))
 
+        if self.logfile == "none":
+            return
+
         try:
             fh = open(self.logfile, 'a')
         except OSError:

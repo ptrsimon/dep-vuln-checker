@@ -6,6 +6,7 @@
 import sys
 import subprocess
 import os.path
+from os import environ
 import requests_cache
 import datetime
 import argparse
@@ -27,7 +28,7 @@ def parse_args():
                         help="NVD apikey location (default: /etc/dep-vuln-checker/nvd-apikey)",
                         default="/etc/dep-vuln-checker/nvd-apikey")
     parser.add_argument('-a', dest="applog", type=str,
-                        help="app log location (default: /var/log/dep-vuln-checker/app.log)",
+                        help="app log location or \"none\" (default: /var/log/dep-vuln-checker/app.log)",
                         default="/var/log/dep-vuln-checker/app.log")
     parser.add_argument('-l', dest="vulnlog", type=str,
                         help="vulnerability log location (default: /var/log/dep-vuln-checker/vulns.log)",
@@ -116,7 +117,12 @@ def read_repolist(path: str, lh: LogHandler):
     return repolist
 
 
-def read_apikey(file: str, lh: LogHandler):
+def read_apikey(envvarname: str, file: str, lh: LogHandler):
+    # env takes precedence over file
+    apikeyfromenv = environ.get(envvarname)
+    if apikeyfromenv is not None:
+        return apikeyfromenv
+
     try:
         with open(file, 'r') as fh:
             return fh.read().rstrip('\n')
@@ -148,8 +154,8 @@ def main():
         sys.exit(1)
     lh.log_msg("Connected to redis at {}:{}".format(args.redishost, args.redisport), "INFO")
 
-    nvdrepo = NvdRepository.NvdRepository(read_apikey(args.nvd_apikey_file, lh), rediscon, lh)
-    ghsarepo = GhsaRepository.GhsaRepository(read_apikey(args.gh_apikey_file, lh), rediscon, lh)
+    nvdrepo = NvdRepository.NvdRepository(read_apikey("NVD_APIKEY", args.nvd_apikey_file, lh), rediscon, lh)
+    ghsarepo = GhsaRepository.GhsaRepository(read_apikey("GH_APIKEY", args.gh_apikey_file, lh), rediscon, lh)
 
     check_deps(lh)
 

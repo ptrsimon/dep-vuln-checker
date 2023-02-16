@@ -33,10 +33,10 @@ positional arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
-  -g GH_APIKEY_FILE     GitHub apikey location (default: /etc/dep-vuln- checker/gh-apikey)
-  -n NVD_APIKEY_FILE    NVD apikey location (default: /etc/dep-vuln- checker/nvd-apikey)
-  -a APPLOG             app log location (default: /var/log/dep-vuln- checker/app.log)
-  -l VULNLOG            vulnerability log location (default: /var/log/dep- vuln-checker/vulns.log)
+  -g GH_APIKEY_FILE     GitHub apikey location (default: /etc/dep-vuln-checker/gh-apikey)
+  -n NVD_APIKEY_FILE    NVD apikey location (default: /etc/dep-vuln-checker/nvd-apikey)
+  -a APPLOG             app log location or "none" (default: /var/log/dep-vuln-checker/app.log)
+  -l VULNLOG            vulnerability log location (default: /dep-vuln-checker/vulns.log)
   -i INVPATH            Inventory database location or "none" (default: /var/lib/dep-vuln-checker/inventory.db)
   -c REQCACHETYPE       request cache type. Allowed values: redis, sqlite (no request cache used if omitted)
   -cp REQCACHEPATH      reqest cache database path when using sqlite cache type (default: /var/lib/dep-vuln-checker/reqcache.db
