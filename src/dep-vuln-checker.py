@@ -149,6 +149,7 @@ def main():
 
     try:
         rediscon = redis.Redis(host=args.redishost, port=args.redisport)
+        rediscon.ping()
     except Exception as e:
         lh.log_msg("Failed to connect to redis at {}:{}: {}".format(args.redishost, args.redisport, str(e)), "ERROR")
         sys.exit(1)
