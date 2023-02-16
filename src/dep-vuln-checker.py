@@ -48,6 +48,9 @@ def parse_args():
     parser.add_argument('-rp', dest="redisport", type=int,
                         help="redis port for request cache and/or severity cache (default: 6379)",
                         default=6379)
+    parser.add_argument('-rP', dest="redispass", type=str,
+                        help="redis password for request cache and/or severity cache (no password used if omitted)",
+                        default=None)
     parser.add_argument('-r', dest="ghsarepopath", type=str,
                         help="directory to clone GitHub Advisory Database to",
                         default="/var/lib/dep-vuln-checker/ghsa")
@@ -149,10 +152,15 @@ def main():
 
     redishostfromenv = environ.get('REDIS_HOST')
     redisportfromenv = environ.get('REDIS_PORT')
+    redispassfromenv = environ.get('REDIS_PASS')
     redishost = args.redishost if redishostfromenv is None else redishostfromenv
     redisport = args.redisport if redisportfromenv is None else redisportfromenv
+    redispass = args.redispass if redispassfromenv is None else redispassfromenv
     try:
-        rediscon = redis.Redis(host=redishost, port=redisport)
+        if redispass is not None:
+            rediscon = redis.Redis(host=redishost, port=redisport, password=redispass)
+        else:
+            rediscon = redis.Redis(host=redishost, port=redisport)
         rediscon.ping()
     except Exception as e:
         lh.log_msg("Failed to connect to redis at {}:{}: {}".format(redishost, redisport, str(e)), "ERROR")
