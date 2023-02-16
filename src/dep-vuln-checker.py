@@ -148,7 +148,10 @@ def main():
     lh = LogHandler.LogHandler(args.applog, args.s)
 
     try:
-        rediscon = redis.Redis(host=args.redishost, port=args.redisport)
+        redishostfromenv = environ.get('REDIS_HOST')
+        redisportfromenv = environ.get('REDIS_PORT')
+        rediscon = redis.Redis(host=args.redishost if redishostfromenv is None else redishostfromenv,
+                               port=args.redisport if redisportfromenv is None else redisportfromenv)
         rediscon.ping()
     except Exception as e:
         lh.log_msg("Failed to connect to redis at {}:{}: {}".format(args.redishost, args.redisport, str(e)), "ERROR")
