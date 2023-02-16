@@ -42,10 +42,20 @@ optional arguments:
   -cp REQCACHEPATH      reqest cache database path when using sqlite cache type (default: /var/lib/dep-vuln-checker/reqcache.db
   -rh REDISHOST         redis host for request cache and/or severity cache (default: 127.0.0.1)
   -rp REDISPORT         redis port for request cache and/or severity cache (default: 6379)
+  -rP REDISPASS         redis password for request cache and/or severity cache (no password used if omitted)
   -r GHSAREPOPATH       directory to clone GitHub Advisory Database to
   -s                    silent mode - no output
   -t NVD_DOWNLOAD_TMPDIR temp directory to download NVD JSON files (default: /tmp)
   -I                    initialize local NVD + GHSA cache and exit
+```
+
+Some options can also be passed as environment variables:
+```
+REDIS_HOST
+REDIS_PORT
+REDIS_PASS
+NVD_APIKEY
+GH_APIKEY
 ```
 
 ## Dependencies
