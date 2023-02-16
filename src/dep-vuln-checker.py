@@ -147,16 +147,17 @@ def main():
 
     lh = LogHandler.LogHandler(args.applog, args.s)
 
+    redishostfromenv = environ.get('REDIS_HOST')
+    redisportfromenv = environ.get('REDIS_PORT')
+    redishost = args.redishost if redishostfromenv is None else redishostfromenv
+    redisport = args.redisport if redisportfromenv is None else redisportfromenv
     try:
-        redishostfromenv = environ.get('REDIS_HOST')
-        redisportfromenv = environ.get('REDIS_PORT')
-        rediscon = redis.Redis(host=args.redishost if redishostfromenv is None else redishostfromenv,
-                               port=args.redisport if redisportfromenv is None else redisportfromenv)
+        rediscon = redis.Redis(host=redishost, port=redisport)
         rediscon.ping()
     except Exception as e:
-        lh.log_msg("Failed to connect to redis at {}:{}: {}".format(args.redishost, args.redisport, str(e)), "ERROR")
+        lh.log_msg("Failed to connect to redis at {}:{}: {}".format(redishost, redisport, str(e)), "ERROR")
         sys.exit(1)
-    lh.log_msg("Connected to redis at {}:{}".format(args.redishost, args.redisport), "INFO")
+    lh.log_msg("Connected to redis at {}:{}".format(redishost, redisport), "INFO")
 
     nvdrepo = NvdRepository.NvdRepository(read_apikey("NVD_APIKEY", args.nvd_apikey_file, lh), rediscon, lh)
     ghsarepo = GhsaRepository.GhsaRepository(read_apikey("GH_APIKEY", args.gh_apikey_file, lh), rediscon, lh)
